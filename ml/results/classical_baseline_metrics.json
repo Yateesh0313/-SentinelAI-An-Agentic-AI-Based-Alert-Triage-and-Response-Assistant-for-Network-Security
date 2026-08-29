@@ -1,0 +1,21 @@
+{
+  "model": "xgboost",
+  "accuracy": 0.7963981547196594,
+  "precision": 0.969045180380107,
+  "recall": 0.6635237278890361,
+  "f1": 0.7876965772432932,
+  "false_positive_rate": 0.028009,
+  "confusion_matrix": [
+    [
+      9439,
+      272
+    ],
+    [
+      4318,
+      8515
+    ]
+  ],
+  "training_time_seconds": 1.52,
+  "cv_mean_accuracy": 0.999111,
+  "cv_std_accuracy": 0.000137
+}

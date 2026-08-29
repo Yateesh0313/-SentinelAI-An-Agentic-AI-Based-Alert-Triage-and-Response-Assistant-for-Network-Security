@@ -1,0 +1,5 @@
+scikit-learn
+xgboost
+pennylane
+pandas
+numpy
