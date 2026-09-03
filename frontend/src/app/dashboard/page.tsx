@@ -1,6 +1,6 @@
 "use client";
 
-import { useSentinelWS, type SentinelEvent, type AttackTechnique, type IPEnrichment, type SignatureMatch, type HoneypotMeta } from "@/hooks/use-sentinel-ws";
+import { useSentinelWS, type SentinelEvent, type AttackTechnique, type IPEnrichment, type SignatureMatch, type HoneypotMeta, type SuricataMeta, type NetworkMeta } from "@/hooks/use-sentinel-ws";
 import {
   Card,
   CardContent,
@@ -9,6 +9,12 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
@@ -39,29 +45,33 @@ function SeverityBadge({ level }: { level: string | null | undefined }) {
   const cls = colorMap[level] || colorMap["UNKNOWN"];
 
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}
+    <Badge
+      variant="outline"
+      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border-transparent ${cls}`}
     >
       {level}
-    </span>
+    </Badge>
   );
 }
 
 function PredictionBadge({ prediction }: { prediction: string }) {
   const isAnomaly = prediction === "anomaly";
   const isHoneypot = prediction === "honeypot";
+  const isSuricata = prediction === "suricata_alert";
   return (
     <Badge
-      variant={isAnomaly ? "destructive" : isHoneypot ? "default" : "secondary"}
+      variant={isAnomaly ? "destructive" : isHoneypot ? "default" : isSuricata ? "outline" : "secondary"}
       className={`text-[0.65rem] font-semibold uppercase tracking-wider ${
         isAnomaly
           ? "bg-red-500/15 text-red-400 border-red-500/20"
           : isHoneypot
           ? "bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/20"
+          : isSuricata
+          ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/20"
           : "bg-emerald-500/10 text-emerald-400 border-emerald-500/10"
       }`}
     >
-      {prediction}
+      {prediction === "suricata_alert" ? "suricata" : prediction}
     </Badge>
   );
 }
@@ -70,17 +80,19 @@ function SourceBadge({ source }: { source?: string }) {
   if (!source) return null;
   const config: Record<string, { bg: string; text: string; label: string }> = {
     honeypot: { bg: "bg-fuchsia-500/15", text: "text-fuchsia-400", label: "Honeypot" },
+    suricata: { bg: "bg-cyan-500/15", text: "text-cyan-400", label: "Suricata IDS" },
     replay: { bg: "bg-blue-500/10", text: "text-blue-400", label: "Replay" },
     live_capture: { bg: "bg-teal-500/10", text: "text-teal-400", label: "Live Capture" },
   };
   const c = config[source] || { bg: "bg-zinc-500/10", text: "text-zinc-400", label: source };
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider ${c.bg} ${c.text} ring-1 ring-current/20`}
+    <Badge
+      variant="outline"
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider border-current/20 ${c.bg} ${c.text}`}
     >
       <svg className="w-2 h-2" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="3" /></svg>
       {c.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -383,6 +395,61 @@ function EnrichmentPanel({
   );
 }
 
+function SuricataAlertPanel({ meta, network }: { meta?: SuricataMeta | null; network?: NetworkMeta | null }) {
+  if (!meta) return null;
+  const sevColors: Record<string, string> = {
+    Critical: "text-red-400 bg-red-500/10",
+    High: "text-orange-400 bg-orange-500/10",
+    Medium: "text-yellow-400 bg-yellow-500/10",
+    Low: "text-emerald-400 bg-emerald-500/10",
+  };
+  const sevClass = sevColors[meta.severity_label] ?? "text-zinc-400 bg-zinc-500/10";
+  return (
+    <div className="mt-2 p-3 rounded-lg bg-gradient-to-r from-cyan-500/[0.04] to-blue-500/[0.04] border border-cyan-500/10">
+      <div className="flex items-center gap-2 mb-2">
+        <svg className="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span className="text-xs font-semibold text-cyan-300">Suricata IDS Alert</span>
+        <span className={`text-[0.65rem] px-1.5 py-0.5 rounded font-medium ${sevClass}`}>
+          {meta.severity_label}
+        </span>
+      </div>
+      <div className="mb-1.5">
+        <code className="text-[0.7rem] font-mono text-cyan-200 bg-white/5 px-1.5 py-0.5 rounded">
+          SID:{meta.signature_id} — {meta.signature}
+        </code>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div className="space-y-1">
+          <div className="text-muted-foreground">Category</div>
+          <span className="text-cyan-300/80">{meta.category}</span>
+        </div>
+        <div className="space-y-1">
+          <div className="text-muted-foreground">Tactic</div>
+          <span className="text-cyan-300/80">{meta.tactic}</span>
+        </div>
+        {network && (
+          <>
+            <div className="space-y-1">
+              <div className="text-muted-foreground">Source</div>
+              <code className="text-[0.7rem] font-mono text-cyan-300 bg-white/5 px-1.5 py-0.5 rounded">
+                {network.src_ip}:{network.src_port}
+              </code>
+            </div>
+            <div className="space-y-1">
+              <div className="text-muted-foreground">Destination</div>
+              <code className="text-[0.7rem] font-mono text-cyan-300 bg-white/5 px-1.5 py-0.5 rounded">
+                {network.dst_ip}:{network.dst_port}
+              </code>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Event card                                                          */
 /* ------------------------------------------------------------------ */
@@ -406,8 +473,9 @@ function EventCard({
   const [actionInFlight, setActionInFlight] = useState(false);
   const isAnomaly = event.prediction === "anomaly";
   const isHoneypot = event.prediction === "honeypot";
+  const isSuricata = event.prediction === "suricata_alert";
   const hasSigMatch = (event.signature_matches?.length ?? 0) > 0;
-  const isFlagged = isAnomaly || isHoneypot || hasSigMatch;
+  const isFlagged = isAnomaly || isHoneypot || isSuricata || hasSigMatch;
   const raw = event.raw_event;
   const isPending = event.status === "pending_review";
   const isApproved = event.status === "approved";
@@ -448,6 +516,8 @@ function EventCard({
     ? "ring-slate-500/30 bg-slate-900/20 opacity-60"
     : isHoneypot
     ? "ring-fuchsia-500/30 bg-fuchsia-950/20 hover:ring-fuchsia-500/50"
+    : isSuricata
+    ? "ring-cyan-500/30 bg-cyan-950/20 hover:ring-cyan-500/50"
     : isAnomaly
     ? "ring-red-500/30 bg-red-950/20 hover:ring-red-500/50"
     : hasSigMatch
@@ -560,49 +630,45 @@ function EventCard({
             <StatusLabel status={event.status} />
           </div>
 
-          {/* ── Action buttons (Phase 17 expanded) ── */}
+          {/* ── Action buttons (shadcn Button + Framer Motion) ── */}
           {showActions && event.event_id && (isPending || isInvestigating) && (
             <div className="flex items-center gap-1.5 flex-wrap justify-end">
               {isPending && (
-                <button
+                <Button
+                  size="xs"
+                  variant="investigate"
                   onClick={handleAction(onInvestigate)}
                   disabled={actionInFlight}
                   title="Mark as Investigating"
-                  className="px-2.5 py-1 rounded-md text-[0.7rem] font-medium
-                    bg-blue-600/80 hover:bg-blue-500 text-white
-                    transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
                   🔍 Investigate
-                </button>
+                </Button>
               )}
-              <button
+              <Button
+                size="xs"
+                variant="success"
                 onClick={handleAction(onApprove)}
                 disabled={actionInFlight}
-                className="px-2.5 py-1 rounded-md text-[0.7rem] font-medium
-                  bg-emerald-600 hover:bg-emerald-500 text-white
-                  transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 {actionInFlight ? "…" : "✓ Approve"}
-              </button>
-              <button
+              </Button>
+              <Button
+                size="xs"
+                variant="slate"
                 onClick={handleAction(onFalsePositive)}
                 disabled={actionInFlight}
                 title="Mark as False Positive"
-                className="px-2.5 py-1 rounded-md text-[0.7rem] font-medium
-                  bg-slate-600 hover:bg-slate-500 text-slate-200
-                  transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 FP
-              </button>
-              <button
+              </Button>
+              <Button
+                size="xs"
+                variant="zinc"
                 onClick={handleAction(onReject)}
                 disabled={actionInFlight}
-                className="px-2.5 py-1 rounded-md text-[0.7rem] font-medium
-                  bg-zinc-700 hover:bg-zinc-600 text-zinc-200
-                  transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 {actionInFlight ? "…" : "✕ Reject"}
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -610,50 +676,50 @@ function EventCard({
 
       {event.triage && (
         <CardContent className="pt-0">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
-          >
-            {expanded ? "- Hide triage details" : "+ Show triage details"}
-          </button>
-          {expanded && (
-            <div className="mt-2 p-3 rounded-lg bg-white/[0.03] border border-white/[0.06] text-sm leading-relaxed space-y-2">
-              <p>
-                <span className="font-medium text-blue-300">Triage: </span>
-                <span className="text-muted-foreground">{event.triage}</span>
-              </p>
-              {event.severity_justification && (
+          <Collapsible open={expanded} onOpenChange={setExpanded}>
+            <CollapsibleTrigger className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1">
+              <span>{expanded ? "− Hide triage details" : "+ Show triage details"}</span>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2 p-3 rounded-lg bg-white/[0.03] border border-white/[0.06] text-sm leading-relaxed space-y-2">
                 <p>
-                  <span className="font-medium text-orange-300">
-                    Justification:{" "}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {event.severity_justification}
-                  </span>
+                  <span className="font-medium text-blue-300">Triage: </span>
+                  <span className="text-muted-foreground">{event.triage}</span>
                 </p>
-              )}
-              {event.attack_techniques && event.attack_techniques.length > 0 && (
-                <div>
-                  <span className="font-medium text-cyan-300">ATT&CK Techniques: </span>
-                  <span className="inline-flex flex-wrap gap-1.5 mt-1">
-                    {event.attack_techniques.map((t) => (
-                      <a
-                        key={t.id}
-                        href={`https://attack.mitre.org/techniques/${t.id}/`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors no-underline"
-                      >
-                        {t.id} — {t.name}
-                      </a>
-                    ))}
-                  </span>
-                </div>
-              )}
-              <EnrichmentPanel enrichment={event.ip_enrichment} />
-              <HoneypotProbePanel meta={event.honeypot_meta} />
-            </div>
-          )}
+                {event.severity_justification && (
+                  <p>
+                    <span className="font-medium text-orange-300">
+                      Justification:{" "}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {event.severity_justification}
+                    </span>
+                  </p>
+                )}
+                {event.attack_techniques && event.attack_techniques.length > 0 && (
+                  <div>
+                    <span className="font-medium text-cyan-300">ATT&CK Techniques: </span>
+                    <span className="inline-flex flex-wrap gap-1.5 mt-1">
+                      {event.attack_techniques.map((t) => (
+                        <a
+                          key={t.id}
+                          href={`https://attack.mitre.org/techniques/${t.id}/`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors no-underline"
+                        >
+                          {t.id} — {t.name}
+                        </a>
+                      ))}
+                    </span>
+                  </div>
+                )}
+                <EnrichmentPanel enrichment={event.ip_enrichment} />
+                <HoneypotProbePanel meta={event.honeypot_meta} />
+                <SuricataAlertPanel meta={event.suricata_meta} network={event.network_meta} />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </CardContent>
       )}
     </Card>
@@ -688,11 +754,13 @@ function StatsBar({ events }: { events: SentinelEvent[] }) {
   ).length;
 
   const honeypotCount = events.filter((e) => e.prediction === "honeypot").length;
+  const suricataCount = events.filter((e) => e.prediction === "suricata_alert").length;
 
   const stats = [
     { label: "Total", value: events.length, color: "text-foreground" },
     { label: "Anomalies", value: anomalyCount, color: "text-red-400" },
     { label: "Honeypot", value: honeypotCount, color: "text-fuchsia-400" },
+    { label: "Suricata", value: suricataCount, color: "text-cyan-400" },
     { label: "Pending", value: pendingCount, color: "text-yellow-400" },
     { label: "Approved", value: approvedCount, color: "text-emerald-400" },
     { label: "Rejected", value: rejectedCount, color: "text-zinc-400" },
@@ -707,7 +775,7 @@ function StatsBar({ events }: { events: SentinelEvent[] }) {
 
   return (
     <div className="space-y-3 mb-6">
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
         {stats.map((stat) => (
           <Card key={stat.label} size="sm" className="text-center">
             <CardContent className="py-3">
@@ -773,6 +841,7 @@ interface StatsData {
   critical_severity: number;
   risk_critical: number;
   honeypot_sourced: number;
+  suricata_sourced?: number;
   by_status: Record<string, number>;
   by_llm_severity: Record<string, number>;
   by_risk_class: Record<string, number>;
@@ -839,6 +908,7 @@ function StatsOverview({
     { label: "LLM Critical",    value: stats.critical_severity, color: "text-red-400",  icon: "🚨", filter: { llm_severity: "Critical" } },
     { label: "Risk CRITICAL",   value: stats.risk_critical,   color: "text-orange-400", icon: "⚠", filter: { risk_classification: "CRITICAL" } },
     { label: "Honeypot Events", value: stats.honeypot_sourced, color: "text-fuchsia-400", icon: "🍯", filter: { source: "honeypot" } },
+    { label: "Suricata Events", value: stats.suricata_sourced ?? stats.by_source?.["suricata"] ?? 0, color: "text-cyan-400", icon: "🛡️", filter: { source: "suricata" } },
     { label: "False Positives", value: stats.false_positives, color: "text-slate-400",  icon: "❌", filter: { status: "false_positive" } },
   ];
 
@@ -852,7 +922,7 @@ function StatsOverview({
         <span className="text-[0.6rem] text-slate-500 italic">💡 Click any card or bar to inspect matching events</span>
       </div>
 
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
         {tiles.map((t) => (
           <button
             key={t.label}
@@ -950,12 +1020,14 @@ function StatsOverview({
                     </p>
                   </div>
                 </div>
-                <button
+                <Button
+                  size="iconSm"
+                  variant="ghost"
                   onClick={closeModal}
-                  className="w-8 h-8 rounded-full border border-slate-700 hover:border-slate-500 bg-slate-800/50 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-all cursor-pointer"
+                  className="rounded-full border border-slate-700 hover:border-slate-500 bg-slate-800/50 hover:bg-slate-700 text-slate-300"
                 >
                   ✕
-                </button>
+                </Button>
               </div>
 
               {/* Modal Body */}
@@ -1060,12 +1132,14 @@ function HistoryView() {
         <p className="text-sm text-muted-foreground">
           {history.length} resolved events (persisted in MongoDB)
         </p>
-        <button
+        <Button
+          size="sm"
+          variant="outline"
           onClick={fetchHistory}
-          className="px-3 py-1 rounded-md text-xs font-medium border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors cursor-pointer"
+          className="text-xs border-zinc-700 text-zinc-400 hover:bg-zinc-800"
         >
           Refresh
-        </button>
+        </Button>
       </div>
 
       {loading ? (
@@ -1108,6 +1182,7 @@ export default function Home() {
     connected,
     replaying,
     honeypotRunning,
+    suricataRunning,
     authError,
     wsStatus,
     researchMode,
@@ -1116,6 +1191,8 @@ export default function Home() {
     stopReplay,
     startHoneypot,
     stopHoneypot,
+    startSuricata,
+    stopSuricata,
     clearEvents,
     approveEvent,
     rejectEvent,
@@ -1160,19 +1237,19 @@ export default function Home() {
               ? `👤 ${localStorage.getItem("sentinel_user")}`
               : ""}
           </span>
-          <button
+          <Button
             id="dashboard-signout"
+            size="xs"
+            variant="outline"
             onClick={() => {
               localStorage.removeItem("sentinel_token");
               localStorage.removeItem("sentinel_user");
               window.location.href = "/login";
             }}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-700/60
-              text-slate-400 hover:text-white hover:border-slate-500/60 hover:bg-slate-800/50
-              transition-all duration-200"
+            className="text-slate-400 hover:text-white border-slate-700/60 hover:border-slate-500/60 hover:bg-slate-800/50"
           >
             Sign Out
-          </button>
+          </Button>
         </div>
       </nav>
       <div className="mb-8">
@@ -1184,38 +1261,44 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Tab bar */}
+      {/* Tab bar (shadcn Button + Framer Motion) */}
       <div className="flex items-center gap-1 mb-6 border-b border-zinc-800 pb-px">
-        <button
+        <Button
+          size="sm"
+          variant={activeTab === "live" ? "default" : "ghost"}
           onClick={() => setActiveTab("live")}
-          className={`px-4 py-2 text-sm font-medium transition-colors rounded-t-md cursor-pointer ${
+          className={`rounded-b-none border-b-2 ${
             activeTab === "live"
-              ? "text-blue-400 border-b-2 border-blue-400 bg-blue-500/5"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "text-blue-400 border-blue-400 bg-blue-500/10 shadow-none"
+              : "border-transparent text-zinc-400 hover:text-zinc-200"
           }`}
         >
           Live Feed
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant={activeTab === "history" ? "default" : "ghost"}
           onClick={() => setActiveTab("history")}
-          className={`px-4 py-2 text-sm font-medium transition-colors rounded-t-md cursor-pointer ${
+          className={`rounded-b-none border-b-2 ${
             activeTab === "history"
-              ? "text-blue-400 border-b-2 border-blue-400 bg-blue-500/5"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "text-blue-400 border-blue-400 bg-blue-500/10 shadow-none"
+              : "border-transparent text-zinc-400 hover:text-zinc-200"
           }`}
         >
           History
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant={activeTab === "rnd" ? "default" : "ghost"}
           onClick={() => setActiveTab("rnd")}
-          className={`px-4 py-2 text-sm font-medium transition-colors rounded-t-md cursor-pointer ${
+          className={`rounded-b-none border-b-2 ${
             activeTab === "rnd"
-              ? "text-violet-400 border-b-2 border-violet-400 bg-violet-500/5"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "text-violet-400 border-violet-400 bg-violet-500/10 shadow-none"
+              : "border-transparent text-zinc-400 hover:text-zinc-200"
           }`}
         >
           Comparative R&amp;D Study
-        </button>
+        </Button>
       </div>
 
       {activeTab === "live" ? (
@@ -1244,61 +1327,94 @@ export default function Home() {
                   : "Connecting…"}
               </span>
               {wsStatus === "failed" && (
-                <button
+                <Button
+                  size="xs"
+                  variant="slate"
                   onClick={reconnect}
-                  className="ml-1 px-2 py-0.5 rounded text-[0.65rem] font-semibold
-                    bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors cursor-pointer"
+                  className="ml-1 px-2 py-0.5 text-[0.65rem] font-semibold"
                 >
                   Retry
-                </button>
+                </Button>
               )}
             </div>
 
             {!replaying ? (
-              <button
+              <Button
+                size="sm"
+                variant="investigate"
                 onClick={startReplay}
                 disabled={!connected}
-                className="px-4 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Start Replay
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
+                size="sm"
+                variant="destructive"
                 onClick={stopReplay}
-                className="px-4 py-1.5 rounded-lg text-xs font-medium bg-red-600 hover:bg-red-500 text-white transition-colors cursor-pointer"
               >
                 Stop Replay
-              </button>
+              </Button>
             )}
 
             {/* Honeypot toggle — only visible in Research Mode */}
             {researchMode && (
               <>
                 {!honeypotRunning ? (
-                  <button
+                  <Button
+                    size="sm"
+                    variant="honeypot"
                     onClick={startHoneypot}
                     disabled={!connected}
-                    className="px-4 py-1.5 rounded-lg text-xs font-medium bg-fuchsia-600 hover:bg-fuchsia-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Start Honeypot
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={stopHoneypot}
-                    className="px-4 py-1.5 rounded-lg text-xs font-medium bg-fuchsia-700 hover:bg-fuchsia-600 text-white transition-colors cursor-pointer ring-1 ring-fuchsia-400/30"
+                    className="bg-fuchsia-700 hover:bg-fuchsia-600 text-white ring-1 ring-fuchsia-400/30"
                   >
                     Stop Honeypot
-                  </button>
+                  </Button>
                 )}
               </>
             )}
 
-            <button
+            {/* Suricata IDS toggle — only visible in Research Mode */}
+            {researchMode && (
+              <>
+                {!suricataRunning ? (
+                  <Button
+                    size="sm"
+                    variant="suricata"
+                    onClick={startSuricata}
+                    disabled={!connected}
+                  >
+                    Start Suricata
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={stopSuricata}
+                    className="bg-cyan-700 hover:bg-cyan-600 text-white ring-1 ring-cyan-400/30"
+                  >
+                    Stop Suricata
+                  </Button>
+                )}
+              </>
+            )}
+
+            <Button
+              size="sm"
+              variant="outline"
               onClick={clearEvents}
-              className="px-4 py-1.5 rounded-lg text-xs font-medium border border-zinc-700 text-zinc-400 hover:bg-zinc-800 transition-colors cursor-pointer"
+              className="border-zinc-700 text-zinc-400 hover:bg-zinc-800"
             >
               Clear
-            </button>
+            </Button>
 
             {replaying && (
               <Badge
@@ -1315,6 +1431,15 @@ export default function Home() {
                 className={`${replaying ? '' : 'ml-auto'} animate-pulse text-fuchsia-400 border-fuchsia-500/30`}
               >
                 HONEYPOT :8899
+              </Badge>
+            )}
+
+            {suricataRunning && (
+              <Badge
+                variant="outline"
+                className={`${replaying || honeypotRunning ? '' : 'ml-auto'} animate-pulse text-cyan-400 border-cyan-500/30`}
+              >
+                SURICATA IDS
               </Badge>
             )}
           </div>
@@ -1347,6 +1472,7 @@ export default function Home() {
                   ev.severity === "Critical" || ev.severity === "High";
                 return (
                   <motion.div
+                    layout
                     key={`${ev.event_index}-${ev.event_id || i}`}
                     initial={{ opacity: 0, y: -20, scale: 0.97 }}
                     animate={{

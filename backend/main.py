@@ -88,6 +88,11 @@ _honeypot_dir = str(_PROJECT_ROOT_EARLY / "ml" / "honeypot")
 if _honeypot_dir not in sys.path:
     sys.path.insert(0, _honeypot_dir)
 
+# Add ml/live_capture/ to sys.path for the Suricata ingestor
+_live_capture_dir = str(_PROJECT_ROOT_EARLY / "ml" / "live_capture")
+if _live_capture_dir not in sys.path:
+    sys.path.insert(0, _live_capture_dir)
+
 # ---------------------------------------------------------------------------
 # Paths to Phase 3/4 artifacts
 # ---------------------------------------------------------------------------
@@ -250,6 +255,7 @@ import database as db
 from enrichment import enrich_ip
 from matcher import match_signatures
 from listener import HoneypotListener
+from suricata_ingest import SuricataIngestor
 from risk_scoring import calculate_risk_score
 
 
@@ -392,6 +398,9 @@ async def root() -> dict:
                 "GET /honeypot/start": "Start the honeypot listener (RESEARCH_MODE only)",
                 "GET /honeypot/stop": "Stop the honeypot listener (RESEARCH_MODE only)",
                 "GET /honeypot/status": "Check honeypot listener status",
+                "GET /suricata/start": "Start Suricata IDS engine (RESEARCH_MODE only)",
+                "GET /suricata/stop": "Stop Suricata IDS engine (RESEARCH_MODE only)",
+                "GET /suricata/status": "Check Suricata IDS engine status",
                 "POST /events/{id}/approve": "Approve a pending event",
                 "POST /events/{id}/reject": "Reject a pending event",
                 "POST /events/{id}/investigate": "Mark event as investigating",
@@ -1016,6 +1025,173 @@ async def honeypot_status() -> dict:
     except Exception as exc:
         logger.error("Honeypot status error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Failed to check honeypot status: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Suricata IDS (Phase 22)
+# ---------------------------------------------------------------------------
+
+_suricata: SuricataIngestor | None = None
+
+
+async def _suricata_on_alert(event: dict) -> None:
+    """Callback fired for each Suricata alert.
+
+    Suricata signature matches are positive detections by definition.
+    We skip the ML detection step (the signature IS the detection signal)
+    and go straight to the agent triage pipeline — identical to honeypot.
+    """
+    suricata_meta = event.get("suricata_meta", {})
+    network_meta = event.get("network_meta", {})
+    raw = event.get("raw_event", {})
+
+    # Run YARA signatures (some may also fire on Suricata events)
+    sig_matches = match_signatures(raw)
+
+    message: dict[str, Any] = {
+        "event_index": event.get("event_index", 0),
+        "raw_event": raw,
+        "prediction": event.get("prediction", "suricata_alert"),
+        "confidence": event.get("confidence", 1.0),
+        "source": "suricata",
+        "suricata_meta": suricata_meta,
+        "network_meta": network_meta,
+        "signature_matches": sig_matches,
+        "ml_flagged": False,   # ML was not run
+        "sig_flagged": len(sig_matches) > 0,
+    }
+
+    # Run agent triage pipeline (always — Suricata alert = always suspicious)
+    try:
+        from pipeline import run_pipeline  # noqa: F811
+
+        t0 = time_module.perf_counter()
+        agent_result = await asyncio.to_thread(run_pipeline, raw)
+        agent_time = time_module.perf_counter() - t0
+
+        message["triage"] = agent_result.get("triage", "")
+        message["severity"] = agent_result.get("severity", suricata_meta.get("severity_label", "UNKNOWN"))
+        message["severity_justification"] = agent_result.get(
+            "severity_justification", ""
+        )
+        message["recommended_action"] = agent_result.get(
+            "recommended_action", "flag_for_review"
+        )
+        message["attack_techniques"] = agent_result.get("attack_techniques", [])
+        message["agent_latency_seconds"] = round(agent_time, 2)
+
+        # IP enrichment
+        try:
+            enrichment_data = await enrich_ip(raw)
+            message["ip_enrichment"] = enrichment_data
+        except Exception as enrich_exc:
+            print(f"  [suricata] Enrichment error: {enrich_exc}")
+            message["ip_enrichment"] = None
+
+        # Formula-based risk score
+        risk = calculate_risk_score(message)
+        message["risk_score"]          = risk["risk_score"]
+        message["risk_classification"] = risk["risk_classification"]
+        message["risk_signals"]        = risk["risk_signals"]
+
+        # Store and broadcast
+        event_id = await _store_event(message.copy())
+        message["event_id"] = event_id
+        message["status"] = "pending_review"
+
+        sig_name = suricata_meta.get("signature", "?")
+        src = network_meta.get("src_ip", "?")
+        print(
+            f"  [suricata] Alert #{event.get('event_index', '?')} {src} -> triage complete "
+            f"severity={message['severity']} risk={risk['risk_score']} {risk['risk_classification']} "
+            f"sig={sig_name} [{event_id}]"
+        )
+
+    except Exception as exc:
+        message["triage"] = f"Agent error: {exc}"
+        message["severity"] = suricata_meta.get("severity_label", "UNKNOWN")
+        message["recommended_action"] = "flag_for_review"
+        message["attack_techniques"] = []
+        message["ip_enrichment"] = None
+        message["agent_latency_seconds"] = 0
+        risk = calculate_risk_score(message)
+        message["risk_score"]          = risk["risk_score"]
+        message["risk_classification"] = risk["risk_classification"]
+        message["risk_signals"]        = risk["risk_signals"]
+        event_id = await _store_event(message.copy())
+        message["event_id"] = event_id
+        message["status"] = "pending_review"
+        print(f"  [suricata] Agent pipeline error: {exc} [{event_id}]")
+
+    await _broadcast(message)
+
+
+@app.get("/suricata/start")
+async def suricata_start(
+    interface: str = "127.0.0.1",
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Start Suricata IDS on a local interface (RESEARCH_MODE only)."""
+    _require_research_mode()
+    global _suricata
+
+    try:
+        if _suricata and _suricata.running:
+            return {
+                "status": "already_running",
+                "alerts": _suricata.alert_count,
+            }
+
+        _suricata = SuricataIngestor(
+            interface=interface,
+            on_alert=_suricata_on_alert,
+        )
+
+        result = await _suricata.start()
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Suricata start error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to start Suricata: {exc}")
+
+
+@app.get("/suricata/stop")
+async def suricata_stop(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Stop the Suricata IDS engine (RESEARCH_MODE only)."""
+    _require_research_mode()
+    global _suricata
+
+    try:
+        if not _suricata or not _suricata.running:
+            return {"status": "not_running"}
+
+        result = await _suricata.stop()
+        _suricata = None
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Suricata stop error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to stop Suricata: {exc}")
+
+
+@app.get("/suricata/status")
+async def suricata_status() -> dict:
+    """Check the Suricata IDS engine status."""
+    try:
+        if _suricata and _suricata.running:
+            return {
+                "status": "running",
+                "alerts": _suricata.alert_count,
+                "eve_json": str(_suricata.eve_json_path),
+            }
+        return {"status": "stopped"}
+    except Exception as exc:
+        logger.error("Suricata status error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to check Suricata status: {exc}")
 
 
 # ---------------------------------------------------------------------------

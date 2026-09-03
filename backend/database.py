@@ -284,6 +284,7 @@ async def get_stats_overview() -> dict:
     # Quick-access counters
     critical_count   = by_severity.get("Critical", 0)
     honeypot_count   = by_source.get("honeypot", 0)
+    suricata_count   = by_source.get("suricata", 0)
     pending_count    = by_status.get("pending_review", 0)
     risk_critical    = by_risk.get("CRITICAL", 0)
     investigating    = by_status.get("investigating", 0)
@@ -297,6 +298,7 @@ async def get_stats_overview() -> dict:
         "critical_severity":  critical_count,
         "risk_critical":      risk_critical,
         "honeypot_sourced":   honeypot_count,
+        "suricata_sourced":   suricata_count,
         "by_status":          by_status,
         "by_llm_severity":    by_severity,
         "by_risk_class":      by_risk,
