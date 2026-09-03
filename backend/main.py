@@ -21,8 +21,11 @@ from __future__ import annotations
 
 import asyncio
 import json as json_module
+import logging
+import os
 import sys
 import time as time_module
+import traceback as tb_module
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,9 +34,35 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+# ---------------------------------------------------------------------------
+# Phase 18: Research Mode configuration
+# ---------------------------------------------------------------------------
+
+load_dotenv()
+
+RESEARCH_MODE: bool = os.getenv("RESEARCH_MODE", "false").lower() in ("true", "1", "yes")
+
+
+def _require_research_mode() -> None:
+    """Raise 403 if RESEARCH_MODE is disabled.
+
+    Called at the top of honeypot/live-capture endpoints so they
+    return a clear JSON error instead of raw crashes in demo mode.
+    """
+    if not RESEARCH_MODE:
+        raise HTTPException(
+            status_code=403,
+            detail="Research Mode is disabled. Set RESEARCH_MODE=true in backend/.env to enable this feature.",
+        )
+
+
+logger = logging.getLogger("sentinelai")
 
 from auth import (
     LoginRequest,
@@ -170,7 +199,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SentinelAI Backend",
     description="Agentic AI Alert Triage & Response Assistant for Network Security",
-    version="0.10.0",
+    version="0.18.0",
     lifespan=lifespan,
 )
 
@@ -181,6 +210,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Phase 18: Global exception handler (safety net for unhandled errors)
+# ---------------------------------------------------------------------------
+
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception):
+    """Catch-all handler so no raw Python traceback ever reaches the client.
+
+    Logs the full traceback server-side for debugging, but returns a
+    generic safe JSON message to the caller.
+    """
+    # Don't intercept HTTP exceptions or request validation errors
+    if isinstance(exc, (HTTPException, StarletteHTTPException, RequestValidationError)):
+        raise exc
+    logger.error(
+        "Unhandled exception on %s %s:\n%s",
+        request.method, request.url, tb_module.format_exc(),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_server_error",
+            "detail": "An unexpected error occurred. Please try again or contact support.",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -317,28 +376,40 @@ def run_inference(event: NetworkEvent) -> tuple[str, float]:
 @app.get("/")
 async def root() -> dict:
     """Root endpoint — API overview."""
-    return {
-        "app": "SentinelAI Backend",
-        "version": "0.17.0",
-        "status": "running",
-        "endpoints": {
-            "GET /": "This overview",
-            "POST /detect": "Classify a single network event (ML + signatures)",
-            "POST /triage": "Detect + full agent pipeline if flagged",
-            "GET /replay/start": "Start streaming KDDTest+ events via WebSocket",
-            "GET /replay/stop": "Stop the replay stream",
-            "GET /honeypot/start": "Start the honeypot listener",
-            "GET /honeypot/stop": "Stop the honeypot listener",
-            "GET /honeypot/status": "Check honeypot listener status",
-            "POST /events/{id}/approve": "Approve a pending event",
-            "POST /events/{id}/reject": "Reject a pending event",
-            "POST /events/{id}/investigate": "Mark event as investigating",
-            "POST /events/{id}/false_positive": "Mark event as false positive",
-            "GET /stats/overview": "Aggregated counts by severity/status/source",
-            "WS /ws": "WebSocket for live event stream",
-            "GET /docs": "Interactive API docs (Swagger UI)",
-        },
-    }
+    try:
+        return {
+            "app": "SentinelAI Backend",
+            "version": "0.18.0",
+            "status": "running",
+            "research_mode": RESEARCH_MODE,
+            "endpoints": {
+                "GET /": "This overview",
+                "GET /config/mode": "Current operating mode (demo/research)",
+                "POST /detect": "Classify a single network event (ML + signatures)",
+                "POST /triage": "Detect + full agent pipeline if flagged",
+                "GET /replay/start": "Start streaming KDDTest+ events via WebSocket",
+                "GET /replay/stop": "Stop the replay stream",
+                "GET /honeypot/start": "Start the honeypot listener (RESEARCH_MODE only)",
+                "GET /honeypot/stop": "Stop the honeypot listener (RESEARCH_MODE only)",
+                "GET /honeypot/status": "Check honeypot listener status",
+                "POST /events/{id}/approve": "Approve a pending event",
+                "POST /events/{id}/reject": "Reject a pending event",
+                "POST /events/{id}/investigate": "Mark event as investigating",
+                "POST /events/{id}/false_positive": "Mark event as false positive",
+                "GET /stats/overview": "Aggregated counts by severity/status/source",
+                "WS /ws": "WebSocket for live event stream",
+                "GET /docs": "Interactive API docs (Swagger UI)",
+            },
+        }
+    except Exception as exc:
+        logger.error("Error in root endpoint: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to load API overview.")
+
+
+@app.get("/config/mode")
+async def config_mode() -> dict:
+    """Return the current operating mode so the frontend can adapt its UI."""
+    return {"research_mode": RESEARCH_MODE}
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -372,8 +443,13 @@ async def detect(event: NetworkEvent) -> DetectResponse:
         )
 
     # Run YARA signature matching (separate from ML)
-    raw = event.model_dump()
-    sig_matches = match_signatures(raw)
+    try:
+        raw = event.model_dump()
+        sig_matches = match_signatures(raw)
+    except Exception as exc:
+        logger.error("YARA signature matching error: %s", exc)
+        raw = event.model_dump()
+        sig_matches = []
 
     return DetectResponse(
         prediction=label,
@@ -404,7 +480,11 @@ async def triage(event: NetworkEvent) -> dict:
     raw = event.model_dump()
 
     # Step 1b: Signature Detection (parallel, independent)
-    sig_matches = match_signatures(raw)
+    try:
+        sig_matches = match_signatures(raw)
+    except Exception as exc:
+        logger.error("YARA matching error in triage: %s", exc)
+        sig_matches = []
     sig_names = [m["rule"] for m in sig_matches]
 
     # Determine if agent pipeline should run:
@@ -424,89 +504,95 @@ async def triage(event: NetworkEvent) -> dict:
         "signature_matches": sig_matches,
     }
 
-    # Step 2: If either method flags, run agent pipeline
-    if should_triage:
-        trigger = "ml+sig" if (ml_flagged and sig_flagged) else ("ml" if ml_flagged else "sig")
-        try:
-            from pipeline import run_pipeline  # noqa: F811
-
-            t0 = time_module.perf_counter()
-            agent_result = await asyncio.to_thread(run_pipeline, raw)
-            agent_time = time_module.perf_counter() - t0
-
-            result["triage"] = agent_result.get("triage", "")
-            result["severity"] = agent_result.get("severity", "UNKNOWN")
-            result["severity_justification"] = agent_result.get(
-                "severity_justification", ""
-            )
-            result["recommended_action"] = agent_result.get(
-                "recommended_action", "flag_for_review"
-            )
-            result["attack_techniques"] = agent_result.get(
-                "attack_techniques", []
-            )
-            result["agent_latency_seconds"] = round(agent_time, 2)
-
-            # Step 3: IP enrichment (simulated IP for NSL-KDD data)
+    try:
+        # Step 2: If either method flags, run agent pipeline
+        if should_triage:
+            trigger = "ml+sig" if (ml_flagged and sig_flagged) else ("ml" if ml_flagged else "sig")
             try:
-                enrichment_data = await enrich_ip(raw)
-                result["ip_enrichment"] = enrichment_data
-            except Exception as enrich_exc:
-                print(f"  [triage] Enrichment error: {enrich_exc}")
+                from pipeline import run_pipeline  # noqa: F811
+
+                t0 = time_module.perf_counter()
+                agent_result = await asyncio.to_thread(run_pipeline, raw)
+                agent_time = time_module.perf_counter() - t0
+
+                result["triage"] = agent_result.get("triage", "")
+                result["severity"] = agent_result.get("severity", "UNKNOWN")
+                result["severity_justification"] = agent_result.get(
+                    "severity_justification", ""
+                )
+                result["recommended_action"] = agent_result.get(
+                    "recommended_action", "flag_for_review"
+                )
+                result["attack_techniques"] = agent_result.get(
+                    "attack_techniques", []
+                )
+                result["agent_latency_seconds"] = round(agent_time, 2)
+
+                # Step 3: IP enrichment (simulated IP for NSL-KDD data)
+                try:
+                    enrichment_data = await enrich_ip(raw)
+                    result["ip_enrichment"] = enrichment_data
+                except Exception as enrich_exc:
+                    print(f"  [triage] Enrichment error: {enrich_exc}")
+                    result["ip_enrichment"] = None
+
+                # Step 4: Formula-based risk score (Phase 17)
+                risk = calculate_risk_score({
+                    **result,
+                    "prediction": label,
+                    "confidence": confidence,
+                    "source": result.get("source", "unknown"),
+                })
+                result["risk_score"]          = risk["risk_score"]
+                result["risk_classification"] = risk["risk_classification"]
+                result["risk_signals"]        = risk["risk_signals"]
+
+                # Store in event store with unique ID
+                event_id = await _store_event(result.copy())
+                result["event_id"] = event_id
+                result["status"] = "pending_review"
+
+                print(f"  [triage] Agent chain completed in {agent_time:.2f}s "
+                      f"-> {result['severity']} (LLM) / {risk['risk_score']} {risk['risk_classification']} (formula) "
+                      f"action={result['recommended_action']} [{event_id}]")
+
+            except Exception as exc:
+                result["triage"] = ""
+                result["severity"] = "UNKNOWN"
+                result["severity_justification"] = f"Agent error: {exc}"
+                result["recommended_action"] = "flag_for_review"
+                result["attack_techniques"] = []
                 result["ip_enrichment"] = None
-
-            # Step 4: Formula-based risk score (Phase 17)
-            risk = calculate_risk_score({
-                **result,
-                "prediction": label,
-                "confidence": confidence,
-                "source": result.get("source", "unknown"),
-            })
-            result["risk_score"]          = risk["risk_score"]
-            result["risk_classification"] = risk["risk_classification"]
-            result["risk_signals"]        = risk["risk_signals"]
-
-            # Store in event store with unique ID
-            event_id = await _store_event(result.copy())
-            result["event_id"] = event_id
-            result["status"] = "pending_review"
-
-            print(f"  [triage] Agent chain completed in {agent_time:.2f}s "
-                  f"-> {result['severity']} (LLM) / {risk['risk_score']} {risk['risk_classification']} (formula) "
-                  f"action={result['recommended_action']} [{event_id}]")
-
-        except Exception as exc:
-            result["triage"] = ""
-            result["severity"] = "UNKNOWN"
-            result["severity_justification"] = f"Agent error: {exc}"
-            result["recommended_action"] = "flag_for_review"
-            result["attack_techniques"] = []
+                result["agent_latency_seconds"] = 0
+                # Still compute risk score from available signals
+                risk = calculate_risk_score({
+                    **result,
+                    "prediction": label,
+                    "confidence": confidence,
+                })
+                result["risk_score"]          = risk["risk_score"]
+                result["risk_classification"] = risk["risk_classification"]
+                result["risk_signals"]        = risk["risk_signals"]
+                event_id = await _store_event(result.copy())
+                result["event_id"] = event_id
+                result["status"] = "pending_review"
+                print(f"  [triage] Agent pipeline error: {exc} [{event_id}]")
+        else:
+            # Neither method flagged -- skip agent pipeline
+            result["triage"] = None
+            result["severity"] = None
+            result["severity_justification"] = None
+            result["recommended_action"] = None
+            result["attack_techniques"] = None
             result["ip_enrichment"] = None
             result["agent_latency_seconds"] = 0
-            # Still compute risk score from available signals
-            risk = calculate_risk_score({
-                **result,
-                "prediction": label,
-                "confidence": confidence,
-            })
-            result["risk_score"]          = risk["risk_score"]
-            result["risk_classification"] = risk["risk_classification"]
-            result["risk_signals"]        = risk["risk_signals"]
-            event_id = await _store_event(result.copy())
-            result["event_id"] = event_id
-            result["status"] = "pending_review"
-            print(f"  [triage] Agent pipeline error: {exc} [{event_id}]")
-    else:
-        # Neither method flagged -- skip agent pipeline
-        result["triage"] = None
-        result["severity"] = None
-        result["severity_justification"] = None
-        result["recommended_action"] = None
-        result["attack_techniques"] = None
-        result["ip_enrichment"] = None
-        result["agent_latency_seconds"] = 0
-        result["event_id"] = None
-        result["status"] = None
+            result["event_id"] = None
+            result["status"] = None
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Triage endpoint error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Triage processing error: {exc}")
 
     return result
 
@@ -702,6 +788,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
+    except Exception as exc:
+        logger.warning("WebSocket error: %s", exc)
     finally:
         if websocket in _ws_clients:
             _ws_clients.remove(websocket)
@@ -715,12 +803,18 @@ async def replay_start(
     """Start replaying KDDTest+ events over WebSocket at 1 event/sec."""
     global _replay_running, _replay_task
 
-    if _replay_running:
-        return {"status": "already_running"}
+    try:
+        if _replay_running:
+            return {"status": "already_running"}
 
-    _replay_running = True
-    _replay_task = asyncio.create_task(_replay_loop())
-    return {"status": "started", "started_by": current_user["username"]}
+        _replay_running = True
+        _replay_task = asyncio.create_task(_replay_loop())
+        return {"status": "started", "started_by": current_user["username"]}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Replay start error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to start replay: {exc}")
 
 
 @app.get("/replay/stop")
@@ -730,14 +824,20 @@ async def replay_stop(
     """Stop the replay stream."""
     global _replay_running, _replay_task
 
-    if not _replay_running:
-        return {"status": "not_running"}
+    try:
+        if not _replay_running:
+            return {"status": "not_running"}
 
-    _replay_running = False
-    if _replay_task:
-        _replay_task.cancel()
-        _replay_task = None
-    return {"status": "stopped", "stopped_by": current_user["username"]}
+        _replay_running = False
+        if _replay_task:
+            _replay_task.cancel()
+            _replay_task = None
+        return {"status": "stopped", "stopped_by": current_user["username"]}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Replay stop error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to stop replay: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -849,56 +949,73 @@ async def honeypot_start(
     port: int = 8899,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Start the honeypot listener on localhost."""
+    """Start the honeypot listener on localhost (RESEARCH_MODE only)."""
+    _require_research_mode()
     global _honeypot
 
-    if _honeypot and _honeypot.running:
-        return {
-            "status": "already_running",
-            "port": _honeypot.port,
-            "connections": _honeypot.connection_count,
-        }
-
-    _honeypot = HoneypotListener(
-        host="127.0.0.1",
-        port=port,
-        on_connection=_honeypot_on_connection,
-    )
-
     try:
+        if _honeypot and _honeypot.running:
+            return {
+                "status": "already_running",
+                "port": _honeypot.port,
+                "connections": _honeypot.connection_count,
+            }
+
+        _honeypot = HoneypotListener(
+            host="127.0.0.1",
+            port=port,
+            on_connection=_honeypot_on_connection,
+        )
+
         await _honeypot.start()
         return {"status": "started", "host": "127.0.0.1", "port": port}
+    except HTTPException:
+        raise
     except OSError as exc:
         return {"status": "error", "detail": str(exc)}
+    except Exception as exc:
+        logger.error("Honeypot start error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to start honeypot: {exc}")
 
 
 @app.get("/honeypot/stop")
 async def honeypot_stop(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Stop the honeypot listener."""
+    """Stop the honeypot listener (RESEARCH_MODE only)."""
+    _require_research_mode()
     global _honeypot
 
-    if not _honeypot or not _honeypot.running:
-        return {"status": "not_running"}
+    try:
+        if not _honeypot or not _honeypot.running:
+            return {"status": "not_running"}
 
-    connections = _honeypot.connection_count
-    await _honeypot.stop()
-    _honeypot = None
-    return {"status": "stopped", "total_connections": connections}
+        connections = _honeypot.connection_count
+        await _honeypot.stop()
+        _honeypot = None
+        return {"status": "stopped", "total_connections": connections}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Honeypot stop error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to stop honeypot: {exc}")
 
 
 @app.get("/honeypot/status")
 async def honeypot_status() -> dict:
     """Check the honeypot listener status."""
-    if _honeypot and _honeypot.running:
-        return {
-            "status": "running",
-            "host": _honeypot.host,
-            "port": _honeypot.port,
-            "connections": _honeypot.connection_count,
-        }
-    return {"status": "stopped"}
+    try:
+        if _honeypot and _honeypot.running:
+            return {
+                "status": "running",
+                "host": _honeypot.host,
+                "port": _honeypot.port,
+                "connections": _honeypot.connection_count,
+            }
+        return {"status": "stopped"}
+    except Exception as exc:
+        logger.error("Honeypot status error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to check honeypot status: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -908,15 +1025,23 @@ async def honeypot_status() -> dict:
 @app.get("/events/pending")
 async def events_pending() -> dict:
     """List all events still awaiting human review."""
-    pending = await db.get_pending_events()
-    return {"count": len(pending), "events": pending}
+    try:
+        pending = await db.get_pending_events()
+        return {"count": len(pending), "events": pending}
+    except Exception as exc:
+        logger.error("Events pending error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch pending events: {exc}")
 
 
 @app.get("/events/history")
 async def events_history(limit: int = 50) -> dict:
     """Return resolved events (approved/rejected), most recent first."""
-    history = await db.get_event_history(limit=limit)
-    return {"count": len(history), "events": history}
+    try:
+        history = await db.get_event_history(limit=limit)
+        return {"count": len(history), "events": history}
+    except Exception as exc:
+        logger.error("Events history error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch event history: {exc}")
 
 
 @app.get("/events/filter")
@@ -944,10 +1069,16 @@ async def events_filter(
 @app.get("/events/{event_id}")
 async def event_status(event_id: str) -> dict:
     """Get the current status of a specific event."""
-    ev = await db.get_event(event_id)
-    if ev is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
-    return {"event_id": event_id, "status": ev.get("status"), "data": ev}
+    try:
+        ev = await db.get_event(event_id)
+        if ev is None:
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
+        return {"event_id": event_id, "status": ev.get("status"), "data": ev}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Event status error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch event: {exc}")
 
 
 @app.post("/events/{event_id}/approve")
@@ -960,41 +1091,44 @@ async def event_approve(
     Uses atomic findOneAndUpdate -- only updates if status is still
     'pending_review'. Returns 409 if already resolved (double-action guard).
     """
-    # Check if event exists first
-    existing = await db.get_event(event_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
+    try:
+        existing = await db.get_event(event_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
 
-    # Atomic approve (only if pending)
-    updated = await db.approve_event(event_id, resolved_by=current_user["username"])
-    if updated is None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Event {event_id} already resolved as '{existing.get('status')}'. "
-                   f"Cannot approve again.",
-        )
+        updated = await db.approve_event(event_id, resolved_by=current_user["username"])
+        if updated is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Event {event_id} already resolved as '{existing.get('status')}'. "
+                       f"Cannot approve again.",
+            )
 
-    action = updated.get("recommended_action", "unknown")
-    print(f"  [approval] Event {event_id} APPROVED by {current_user['username']}.")
-    print(f"  [approval] SIMULATED: executing '{action}' "
-          f"(severity={updated.get('severity', '?')})")
+        action = updated.get("recommended_action", "unknown")
+        print(f"  [approval] Event {event_id} APPROVED by {current_user['username']}.")
+        print(f"  [approval] SIMULATED: executing '{action}' "
+              f"(severity={updated.get('severity', '?')})")
 
-    # Broadcast status update to all WS clients
-    await _broadcast({
-        "type": "status_update",
-        "event_id": event_id,
-        "status": "approved",
-        "action_executed": action,
-        "resolved_by": current_user["username"],
-    })
+        await _broadcast({
+            "type": "status_update",
+            "event_id": event_id,
+            "status": "approved",
+            "action_executed": action,
+            "resolved_by": current_user["username"],
+        })
 
-    return {
-        "event_id": event_id,
-        "status": "approved",
-        "action_executed": action,
-        "resolved_by": current_user["username"],
-        "note": f"SIMULATED: '{action}' executed.",
-    }
+        return {
+            "event_id": event_id,
+            "status": "approved",
+            "action_executed": action,
+            "resolved_by": current_user["username"],
+            "note": f"SIMULATED: '{action}' executed.",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Event approve error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to approve event: {exc}")
 
 
 @app.post("/events/{event_id}/reject")
@@ -1006,36 +1140,42 @@ async def event_reject(
 
     Uses atomic findOneAndUpdate -- same double-action guard as approve.
     """
-    existing = await db.get_event(event_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
+    try:
+        existing = await db.get_event(event_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
 
-    updated = await db.reject_event(event_id, resolved_by=current_user["username"])
-    if updated is None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Event {event_id} already resolved as '{existing.get('status')}'. "
-                   f"Cannot reject again.",
-        )
+        updated = await db.reject_event(event_id, resolved_by=current_user["username"])
+        if updated is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Event {event_id} already resolved as '{existing.get('status')}'. "
+                       f"Cannot reject again.",
+            )
 
-    action = updated.get("recommended_action", "unknown")
-    print(f"  [approval] Event {event_id} REJECTED by {current_user['username']}. No action taken.")
+        action = updated.get("recommended_action", "unknown")
+        print(f"  [approval] Event {event_id} REJECTED by {current_user['username']}. No action taken.")
 
-    await _broadcast({
-        "type": "status_update",
-        "event_id": event_id,
-        "status": "rejected",
-        "action_declined": action,
-        "resolved_by": current_user["username"],
-    })
+        await _broadcast({
+            "type": "status_update",
+            "event_id": event_id,
+            "status": "rejected",
+            "action_declined": action,
+            "resolved_by": current_user["username"],
+        })
 
-    return {
-        "event_id": event_id,
-        "status": "rejected",
-        "action_declined": action,
-        "resolved_by": current_user["username"],
-        "note": "Action declined. No action was taken.",
-    }
+        return {
+            "event_id": event_id,
+            "status": "rejected",
+            "action_declined": action,
+            "resolved_by": current_user["username"],
+            "note": "Action declined. No action was taken.",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Event reject error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to reject event: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1047,36 +1187,37 @@ async def event_investigate(
     event_id: str,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Mark an event as 'investigating' — analyst is actively reviewing it.
+    """Mark an event as 'investigating'."""
+    try:
+        existing = await db.get_event(event_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
 
-    This is a richer SOC workflow state between pending_review and final
-    resolution. Unlike approve/reject it does not require pending_review
-    status, so an analyst can also move false_positive → investigating.
-    """
-    existing = await db.get_event(event_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
+        updated = await db.update_event_status(
+            event_id, "investigating", updated_by=current_user["username"]
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
 
-    updated = await db.update_event_status(
-        event_id, "investigating", updated_by=current_user["username"]
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
+        print(f"  [status] Event {event_id} -> INVESTIGATING by {current_user['username']}")
 
-    print(f"  [status] Event {event_id} -> INVESTIGATING by {current_user['username']}")
+        await _broadcast({
+            "type": "status_update",
+            "event_id": event_id,
+            "status": "investigating",
+            "resolved_by": current_user["username"],
+        })
 
-    await _broadcast({
-        "type": "status_update",
-        "event_id": event_id,
-        "status": "investigating",
-        "resolved_by": current_user["username"],
-    })
-
-    return {
-        "event_id": event_id,
-        "status": "investigating",
-        "updated_by": current_user["username"],
-    }
+        return {
+            "event_id": event_id,
+            "status": "investigating",
+            "updated_by": current_user["username"],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Event investigate error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to update event: {exc}")
 
 
 @app.post("/events/{event_id}/false_positive")
@@ -1084,35 +1225,37 @@ async def event_false_positive(
     event_id: str,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Mark an event as 'false_positive' — analyst determined it's benign.
+    """Mark an event as 'false_positive'."""
+    try:
+        existing = await db.get_event(event_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
 
-    Provides a dedicated false-positive state for audit and model feedback.
-    Useful for measuring the FP rate of the detection pipeline.
-    """
-    existing = await db.get_event(event_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
+        updated = await db.update_event_status(
+            event_id, "false_positive", updated_by=current_user["username"]
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
 
-    updated = await db.update_event_status(
-        event_id, "false_positive", updated_by=current_user["username"]
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail=f"Event {event_id} not found.")
+        print(f"  [status] Event {event_id} -> FALSE_POSITIVE by {current_user['username']}")
 
-    print(f"  [status] Event {event_id} -> FALSE_POSITIVE by {current_user['username']}")
+        await _broadcast({
+            "type": "status_update",
+            "event_id": event_id,
+            "status": "false_positive",
+            "resolved_by": current_user["username"],
+        })
 
-    await _broadcast({
-        "type": "status_update",
-        "event_id": event_id,
-        "status": "false_positive",
-        "resolved_by": current_user["username"],
-    })
-
-    return {
-        "event_id": event_id,
-        "status": "false_positive",
-        "updated_by": current_user["username"],
-    }
+        return {
+            "event_id": event_id,
+            "status": "false_positive",
+            "updated_by": current_user["username"],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Event false_positive error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to update event: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1128,8 +1271,8 @@ async def stats_overview() -> dict:
     """
     try:
         return await db.get_stats_overview()
-    except RuntimeError:
-        # MongoDB not connected — return zeros gracefully
+    except Exception:
+        # MongoDB not connected or other error — return zeros gracefully
         return {
             "total_events": 0, "pending_review": 0, "investigating": 0,
             "false_positives": 0, "critical_severity": 0, "risk_critical": 0,
@@ -1145,10 +1288,22 @@ async def stats_overview() -> dict:
 @app.post("/auth/register", status_code=201)
 async def auth_register(req: RegisterRequest) -> dict:
     """Register a new analyst account."""
-    return await register_user(req)
+    try:
+        return await register_user(req)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Auth register error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Registration failed: {exc}")
 
 
 @app.post("/auth/login")
 async def auth_login(req: LoginRequest):
     """Authenticate and return a JWT bearer token."""
-    return await login_user(req)
+    try:
+        return await login_user(req)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Auth login error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Login failed: {exc}")

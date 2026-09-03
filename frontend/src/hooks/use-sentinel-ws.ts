@@ -76,6 +76,9 @@ export interface SentinelEvent {
   agent_latency_seconds?: number;
   event_id?: string | null;
   status?: string | null;
+  risk_score?: number | null;
+  risk_classification?: string | null;
+  risk_signals?: Record<string, unknown> | null;
 }
 
 interface StatusUpdate {
@@ -118,7 +121,7 @@ export function useSentinelWS() {
   const [honeypotRunning, setHoneypotRunning] = useState(false);
   const [authError, setAuthError]         = useState<string | null>(null);
   const [wsStatus, setWsStatus]           = useState<"connecting" | "connected" | "reconnecting" | "failed">("connecting");
-
+  const [researchMode, setResearchMode]   = useState(false);
   const wsRef              = useRef<WebSocket | null>(null);
   const reconnectAttempts  = useRef(0);
   const reconnectTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -195,6 +198,27 @@ export function useSentinelWS() {
   useEffect(() => {
     unmounted.current = false;
     connect();
+    // Fetch research mode config
+    fetch(`${API_BASE}/config/mode`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.research_mode !== undefined) setResearchMode(data.research_mode);
+      })
+      .catch(() => { /* silent — default false */ });
+
+    // Fetch initial pending events from DB so live feed is immediately populated
+    fetch(`${API_BASE}/events/pending`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.events) && data.events.length > 0) {
+          setEvents((prev) => {
+            const existingIds = new Set(prev.map((e) => e.event_id).filter(Boolean));
+            const newPending = data.events.filter((e: SentinelEvent) => !existingIds.has(e.event_id));
+            return [...prev, ...newPending].slice(0, MAX_EVENTS);
+          });
+        }
+      })
+      .catch(() => { /* backend may still be starting */ });
     return () => {
       unmounted.current = true;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
@@ -309,6 +333,11 @@ export function useSentinelWS() {
     try {
       const res = await authedFetch(`${API_BASE}/honeypot/start`);
       if (res.status === 401) { setAuthError("Session expired — please sign in again."); return; }
+      if (res.status === 403) {
+        const data = await res.json();
+        setAuthError(data.detail || "Research Mode is disabled.");
+        return;
+      }
       const data = await res.json();
       if (data.status === "started" || data.status === "already_running") setHoneypotRunning(true);
     } catch (err) {
@@ -322,6 +351,11 @@ export function useSentinelWS() {
     try {
       const res = await authedFetch(`${API_BASE}/honeypot/stop`);
       if (res.status === 401) { setAuthError("Session expired — please sign in again."); return; }
+      if (res.status === 403) {
+        const data = await res.json();
+        setAuthError(data.detail || "Research Mode is disabled.");
+        return;
+      }
       const data = await res.json();
       if (data.status === "stopped" || data.status === "not_running") setHoneypotRunning(false);
     } catch (err) {
@@ -336,6 +370,7 @@ export function useSentinelWS() {
     honeypotRunning,
     authError,
     wsStatus,
+    researchMode,
     reconnect,
     startReplay,
     stopReplay,

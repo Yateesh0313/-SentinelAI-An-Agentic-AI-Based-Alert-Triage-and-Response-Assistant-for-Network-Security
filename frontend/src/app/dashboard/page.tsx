@@ -415,8 +415,8 @@ function EventCard({
   const isInvestigating = event.status === "investigating";
   const isFalsePositive = event.status === "false_positive";
 
-  const riskScore = (event as Record<string, unknown>).risk_score as number | undefined;
-  const riskClass = (event as Record<string, unknown>).risk_classification as string | undefined;
+  const riskScore = event.risk_score ?? undefined;
+  const riskClass = event.risk_classification ?? undefined;
 
   const riskColors: Record<string, string> = {
     CRITICAL: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -832,7 +832,7 @@ function StatsOverview({
 
   if (!stats || stats.total_events === 0) return null;
 
-  const tiles = [
+  const tiles: { label: string; value: number; color: string; icon: string; filter: Record<string, string> }[] = [
     { label: "Total Events",    value: stats.total_events,    color: "text-slate-300",   icon: "📁", filter: { status: "all" } },
     { label: "Pending Review",  value: stats.pending_review,  color: "text-yellow-400", icon: "⏳", filter: { status: "pending_review" } },
     { label: "Investigating",   value: stats.investigating,   color: "text-blue-400",   icon: "🔍", filter: { status: "investigating" } },
@@ -1110,6 +1110,7 @@ export default function Home() {
     honeypotRunning,
     authError,
     wsStatus,
+    researchMode,
     reconnect,
     startReplay,
     stopReplay,
@@ -1122,7 +1123,7 @@ export default function Home() {
     markFalsePositive,
   } = useSentinelWS();
 
-  const [activeTab, setActiveTab] = useState<"live" | "history">("live");
+  const [activeTab, setActiveTab] = useState<"live" | "history" | "rnd">("live");
 
   return (
     <div className="min-h-screen bg-[#050812] relative">
@@ -1205,6 +1206,16 @@ export default function Home() {
         >
           History
         </button>
+        <button
+          onClick={() => setActiveTab("rnd")}
+          className={`px-4 py-2 text-sm font-medium transition-colors rounded-t-md cursor-pointer ${
+            activeTab === "rnd"
+              ? "text-violet-400 border-b-2 border-violet-400 bg-violet-500/5"
+              : "text-zinc-400 hover:text-zinc-200"
+          }`}
+        >
+          Comparative R&amp;D Study
+        </button>
       </div>
 
       {activeTab === "live" ? (
@@ -1260,22 +1271,26 @@ export default function Home() {
               </button>
             )}
 
-            {/* Honeypot toggle */}
-            {!honeypotRunning ? (
-              <button
-                onClick={startHoneypot}
-                disabled={!connected}
-                className="px-4 py-1.5 rounded-lg text-xs font-medium bg-fuchsia-600 hover:bg-fuchsia-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                Start Honeypot
-              </button>
-            ) : (
-              <button
-                onClick={stopHoneypot}
-                className="px-4 py-1.5 rounded-lg text-xs font-medium bg-fuchsia-700 hover:bg-fuchsia-600 text-white transition-colors cursor-pointer ring-1 ring-fuchsia-400/30"
-              >
-                Stop Honeypot
-              </button>
+            {/* Honeypot toggle — only visible in Research Mode */}
+            {researchMode && (
+              <>
+                {!honeypotRunning ? (
+                  <button
+                    onClick={startHoneypot}
+                    disabled={!connected}
+                    className="px-4 py-1.5 rounded-lg text-xs font-medium bg-fuchsia-600 hover:bg-fuchsia-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Start Honeypot
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopHoneypot}
+                    className="px-4 py-1.5 rounded-lg text-xs font-medium bg-fuchsia-700 hover:bg-fuchsia-600 text-white transition-colors cursor-pointer ring-1 ring-fuchsia-400/30"
+                  >
+                    Stop Honeypot
+                  </button>
+                )}
+              </>
             )}
 
             <button
@@ -1376,8 +1391,63 @@ export default function Home() {
             </AnimatePresence>
           )}
         </>
-      ) : (
+      ) : activeTab === "history" ? (
         <HistoryView />
+      ) : (
+        /* Comparative R&D Study tab */
+        <div className="space-y-6">
+          <Card className="border-violet-500/20 bg-violet-950/10">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded text-[0.6rem] font-bold uppercase tracking-widest
+                  bg-violet-500/10 text-violet-400 border border-violet-500/20">Research</span>
+                <CardTitle className="text-lg">Comparative R&amp;D Study</CardTitle>
+              </div>
+              <CardDescription>
+                Experimental detection methods explored during the research phase of SentinelAI.
+                These are <strong>not</strong> part of the production triage pipeline.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-4 rounded-lg bg-white/[0.02] border border-white/5">
+                <h3 className="text-sm font-bold text-white mb-2">Quantum-Enhanced ML (Exploratory)</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  A comparative study explored Variational Quantum Classifier (VQC) circuits
+                  against the production XGBoost model on the NSL-KDD dataset. The quantum approach
+                  used Qiskit&apos;s Aer simulator with ZZFeatureMap encoding and a RealAmplitudes ansatz.
+                  Results showed the classical XGBoost model significantly outperforms the quantum
+                  classifier in both accuracy and inference speed, validating the production choice.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-md bg-emerald-500/5 border border-emerald-500/10">
+                    <div className="text-xs text-emerald-400 font-semibold">XGBoost (Production)</div>
+                    <div className="text-lg font-black text-emerald-400 mt-1">99.1%</div>
+                    <div className="text-[0.65rem] text-slate-500">Accuracy on KDDTest+</div>
+                  </div>
+                  <div className="p-3 rounded-md bg-violet-500/5 border border-violet-500/10">
+                    <div className="text-xs text-violet-400 font-semibold">Quantum VQC (Research)</div>
+                    <div className="text-lg font-black text-violet-400 mt-1">~65-70%</div>
+                    <div className="text-[0.65rem] text-slate-500">Accuracy (simulator)</div>
+                  </div>
+                </div>
+              </div>
+              {researchMode && (
+                <div className="p-4 rounded-lg bg-white/[0.02] border border-white/5">
+                  <h3 className="text-sm font-bold text-white mb-2">Honeypot Intelligence (Research Mode)</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    The honeypot listener is available in Research Mode. It deploys a decoy
+                    TCP listener on localhost to capture real adversarial probes and feed them
+                    into the triage pipeline. Toggle it from the Live Feed controls.
+                  </p>
+                </div>
+              )}
+              <p className="text-[0.65rem] text-slate-600 italic">
+                These experimental approaches informed architecture decisions but are not
+                included in the operational detection pipeline.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       )}
       </div>
     </div>

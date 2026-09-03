@@ -84,8 +84,11 @@ class HoneypotListener:
 
         self._running = False
         if self._server:
-            self._server.close()
-            await self._server.wait_closed()
+            try:
+                self._server.close()
+                await self._server.wait_closed()
+            except Exception:
+                pass
             self._server = None
         print(f"  [honeypot] Stopped. Total connections logged: {self._connection_count}")
 

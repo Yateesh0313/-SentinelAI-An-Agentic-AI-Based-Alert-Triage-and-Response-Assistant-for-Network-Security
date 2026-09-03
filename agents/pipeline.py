@@ -22,7 +22,9 @@ from attack_mapping import map_attack_techniques
 # Load environment variables
 # ---------------------------------------------------------------------------
 
-load_dotenv()  # reads agents/.env
+from pathlib import Path
+load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv()
 
 _GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 _GROQ_MODEL: str = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
