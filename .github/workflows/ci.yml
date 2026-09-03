@@ -54,6 +54,7 @@ jobs:
 
       - name: Run test suite
         env:
+          PYTHONPATH: .
           MONGO_URI: mongodb://localhost:27017
           MONGO_DB_NAME: sentinelai_test
           RESEARCH_MODE: "false"

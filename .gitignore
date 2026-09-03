@@ -58,4 +58,11 @@ desktop.ini
 *.h5
 *.pkl
 *.joblib
+!ml/data/processed/scaler.joblib
+!ml/data/processed/encoder.joblib
+!ml/results/classical_baseline_model.joblib
+!ml/results/pca_transform.joblib
+
 *.npy
+!ml/results/quantum_weights.npy
+
