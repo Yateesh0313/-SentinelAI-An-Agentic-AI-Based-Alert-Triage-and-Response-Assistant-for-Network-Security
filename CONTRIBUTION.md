@@ -1,73 +1,77 @@
-# 🖥️ Member Contribution: Frontend, UI/UX & Deployment
+# 👥 SentinelAI — Comprehensive Team Work & Contributions
 
 **Basaveshwar Engineering College (BEC), Bagalkote**  
-**Department of Computer Science & Engineering | Final Year B.E. | VTU 2027**
-
-- **Team Member**: Dilip Holkar
-- **USN**: `2BA24CS402`
-- **Core Domain**: Frontend Architecture, UI/UX Design & Deployment
-- **Active Branch**: `Dilip`
+**Department of Computer Science & Engineering | Final Year B.E. | VTU 2027**  
+**Domain: Artificial Intelligence & Cybersecurity**
 
 ---
 
-## 🎯 Executive Summary & Role Overview
+## 🏛️ Project Leadership & Architectural Contribution Matrix
 
-As the **Frontend, UI/UX & Deployment Lead**, my primary responsibility was designing, building, and deploying the analyst-facing user experience and production infrastructure of SentinelAI. 
+SentinelAI is developed collaboratively by a 4-member final year engineering team at Basaveshwar Engineering College (Autonomous), affiliated with Visvesvaraya Technological University (VTU), Belagavi. Each member leads a distinct architectural pillar of the platform:
 
-An advanced AI-driven SOC platform requires a user interface that avoids cognitive overload, enables instantaneous threat assessment, and provides seamless human-in-the-loop decision gating. I built a modern, responsive SOC dashboard using **Next.js 16**, **React 19**, **Tailwind CSS**, **shadcn/ui**, and **Framer Motion**, integrated with a cinematic 3D network visualization powered by **Three.js** and **GSAP**. On the operations side, I established containerized deployment via **Docker** and automated **GitHub Actions CI/CD workflows**.
-
----
-
-## 🛠️ Architectural Responsibilities & Key Deliverables
-
-### 1. Next.js 16 & React 19 SOC Dashboard (`frontend/src/app/dashboard/page.tsx`)
-- Developed a high-density, real-time Security Operations Center (SOC) dashboard displaying:
-  - **Live Threat Stream**: Streaming alerts arriving via WebSockets without page reload.
-  - **Animated Collapsible Triage Cards**: Built with `@radix-ui/react-collapsible` and Framer Motion, enabling analysts to smoothly expand and collapse deep agentic reasoning trails, raw packet payloads, and MITRE ATT&CK badges.
-  - **Human-in-the-Loop Approval Hub**: One-click actions for `Approve Mitigation`, `Reject Alert`, and `Investigate Further` with double-action guards and optimistic UI updates.
-  - **Live Engine Controls**: Interactive dashboard controls to launch/stop the **Suricata 7.0 IDS** engine, toggle the Honeypot listener, and control NSL-KDD dataset replay.
-
-### 2. Modern UI Component Architecture (`frontend/src/components/ui/`)
-- Implemented production-grade **shadcn/ui** design system components:
-  - `button.tsx`: Variant-driven button primitive (default, destructive, outline, ghost, secondary).
-  - `collapsible.tsx`: Accessible disclosure component for detailed alert forensics.
-  - Badge and Card primitives tailored for dark-mode cybersecurity palettes with high-contrast severity color coding (`CRITICAL` in crimson, `HIGH` in amber, `MEDIUM` in cyan, `LOW` in slate).
-
-### 3. Real-Time WebSocket Hook (`frontend/src/hooks/use-sentinel-ws.ts`)
-- Engineered a custom React hook managing bidirectional WebSocket connections to the FastAPI backend:
-  - Built-in exponential backoff and automatic reconnection upon network disruption.
-  - Memory-bounded FIFO event queue preventing DOM bloat during high-throughput traffic replay.
-  - Audio and visual cues for critical threat ingress.
-
-### 4. 3D Cinematic Landing Page Hero (Three.js + GSAP)
-- Designed an immersive 3D interactive hero visualization using **Three.js** and **GSAP**:
-  - Dynamically renders an active network graph with pulsating threat nodes and packet trajectories.
-  - Smooth scroll-triggered camera movements and typography entrance animations.
-
-### 5. Deployment Infrastructure & CI/CD (`docker-compose.yml`, `.github/workflows/ci.yml`)
-- Configured multi-container orchestration via **Docker Compose** provisioning MongoDB 7 and application dependencies.
-- Authored the automated GitHub Actions CI pipeline (`ci.yml`) executing Python pytest suites and Next.js production builds on every push to ensure zero regression.
+| # | Team Member | USN | Core Domain & Focus | Dedicated Role Document | Active Git Branch |
+|---|---|---|---|---|---|
+| 1 | **Yateesh Mattur** | `2BA23CS125` | **Agentic AI & LLM Orchestration** | [`docs/contributions/CONTRIBUTION_YATEESH.md`](docs/contributions/CONTRIBUTION_YATEESH.md) | [`Yateesh0313-patch-1`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Yateesh0313-patch-1) |
+| 2 | **Somashekhar Kadrolli** | `2BA23CS101` | **ML & Quantum Detection** | [`docs/contributions/CONTRIBUTION_SOMASHEKHAR.md`](docs/contributions/CONTRIBUTION_SOMASHEKHAR.md) | [`Somashekhar`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Somashekhar) |
+| 3 | **Praveen Nashi** | `2BA23CS071` | **Backend & Cybersecurity Integrations** | [`docs/contributions/CONTRIBUTION_PRAVEEN.md`](docs/contributions/CONTRIBUTION_PRAVEEN.md) | [`Praveen-Nashi`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Praveen-Nashi) |
+| 4 | **Dilip Holkar** | `2BA24CS402` | **Frontend, UI/UX & Deployment** | [`docs/contributions/CONTRIBUTION_DILIP.md`](docs/contributions/CONTRIBUTION_DILIP.md) | [`Dilip`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Dilip) |
 
 ---
 
-## 📂 Core Files Authored & Maintained
+## 🔍 Detailed Contributions by Team Member
 
-| File | Purpose |
-|---|---|
-| `frontend/src/app/dashboard/page.tsx` | Main SOC dashboard page, live event stream, and action triggers |
-| `frontend/src/app/page.tsx` | Cinematic 3D landing page with GSAP animations & Three.js canvas |
-| `frontend/src/components/ui/button.tsx` | Reusable shadcn/ui Button primitive |
-| `frontend/src/components/ui/collapsible.tsx` | Radix UI accessible Collapsible disclosure primitive |
-| `frontend/src/hooks/use-sentinel-ws.ts` | Resilient auto-reconnecting WebSocket client hook |
-| `frontend/package.json` | Next.js 16, React 19, Radix UI, Lucide icons, and Tailwind dependencies |
-| `docker-compose.yml` | Multi-service local and staging deployment specification |
-| `.github/workflows/ci.yml` | Automated GitHub Actions CI workflow for backend and frontend tests |
-| `tests/test_frontend_smoke.py` | Smoke test validating production Next.js build output across routes |
+### 1. Yateesh Mattur (`2BA23CS125`) — Agentic AI & LLM Orchestration
+- **LangGraph Multi-Agent Architecture**: Designed and built the sequential state graph (`agents/pipeline.py`) routing anomalous events through dedicated **Triage**, **Severity**, and **Response Recommendation** agent nodes.
+- **Groq LPU Inference**: Integrated ultra-low-latency LLM inference (Qwen 2.5 and Llama 3 models) via the Groq API, generating natural language explanations and security justifications in $< 0.85$ seconds.
+- **MITRE ATT&CK Heuristics**: Authored technique mapping rules (`agents/attack_mapping.py`) correlating traffic features to tactics T1498 (DoS), T1046 (Scanning), T1110 (Brute Force), T1041 (Exfiltration), and T1068 (Privilege Escalation).
+- **Advisory Response Formulations**: Developed contextual response formulation proposing actions (`block_ip`, `isolate_host`, `rate_limit`, `flag_for_review`) while enforcing human authorization.
+- **Detailed Specification**: See [Yateesh's Full Role Document](docs/contributions/CONTRIBUTION_YATEESH.md).
 
 ---
 
-## 🧪 Validation & Test Coverage
+### 2. Somashekhar Kadrolli (`2BA23CS101`) — ML & Quantum Detection
+- **Classical Anomaly Detection**: Built and benchmarked **XGBoost** and **Random Forest** models on the standard NSL-KDD benchmark, achieving $> 99.2\%$ training accuracy and $> 80.4\%$ test accuracy on the difficult KDDTest+ split.
+- **Preprocessing Pipeline (41 → 122 Dimensions)**: Engineered normalization and one-hot encoding pipelines (`ml/preprocessing/`) converting raw 41 flow attributes to normalized 122-feature vectors with robust handling for unknown categories.
+- **PennyLane Quantum VQC Study**: Implemented a Variational Quantum Classifier running parameterized quantum circuits (PQCs) with angle embedding and entangling layers to empirically compare quantum NISQ performance against classical baselines.
+- **Evaluation & Preprocessor Artifacts**: Saved serialized model artifacts (`scaler.joblib`, `encoder.joblib`) ensuring zero training-serving skew during live inference.
+- **Detailed Specification**: See [Somashekhar's Full Role Document](docs/contributions/CONTRIBUTION_SOMASHEKHAR.md).
 
-- **Frontend Production Build**: Clean compilation under Turbopack in Next.js 16 with zero TypeScript errors across `/`, `/dashboard`, and `/login`.
-- **Automated Smoke Tests**: 4 tests in `tests/test_frontend_smoke.py` verifying static artifact presence and route health.
-- **Cross-Browser Verification**: Responsive layout verified across standard desktop, tablet, and mobile viewport dimensions.
+---
+
+### 3. Praveen Nashi (`2BA23CS071`) — Backend & Cybersecurity Integrations
+- **FastAPI REST & WebSocket Server**: Engineered the high-concurrency asynchronous API server (`backend/main.py`) and live alert broadcast hub.
+- **MongoDB Persistence & Atomic Guards**: Integrated MongoDB 7 using the async **Motor** driver, enforcing atomic state transitions (`pending_review` $\to$ `approved` / `rejected` / `investigating`) with 409 Conflict double-action guards.
+- **JWT & Role-Based Access Control**: Implemented secure authentication and authorization (`backend/auth.py`) with bcrypt password hashing.
+- **5-Signal Risk Scoring Engine (0–100)**: Formulated the multi-tier weighted risk formula combining ML confidence, AbuseIPDB reputation, YARA signature matches, ATT&CK severity, and source baselines into normalized classifications (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`).
+- **Suricata 7.0 IDS Integration**: Integrated live local loopback capture, PCAP replay, and structured `eve.json` parsing (47,000+ Emerging Threats rules).
+- **YARA & Honeypot**: Built signature matching engine (`ml/signatures/`) and TCP deception listener (`ml/honeypot/`).
+- **Detailed Specification**: See [Praveen's Full Role Document](docs/contributions/CONTRIBUTION_PRAVEEN.md).
+
+---
+
+### 4. Dilip Holkar (`2BA24CS402`) — Frontend, UI/UX & Deployment
+- **Next.js 16 & React 19 SOC Dashboard**: Developed the responsive analyst dashboard (`frontend/src/app/dashboard/page.tsx`) with real-time alert feed, metrics overview, and action controls.
+- **Modern Component Design System**: Implemented accessible **shadcn/ui** primitives ([`button.tsx`](frontend/src/components/ui/button.tsx), [`collapsible.tsx`](frontend/src/components/ui/collapsible.tsx)) and custom dark-mode cybersecurity palettes.
+- **Motion & Disclosure Forensics**: Built smooth **Framer Motion** collapsible cards allowing analysts to inspect LLM reasoning trails, raw packet payloads, and MITRE badges without interface clutter.
+- **3D Cinematic Hero (Three.js + GSAP)**: Designed dynamic 3D network node visualizer with interactive camera physics on the landing page (`frontend/src/app/page.tsx`).
+- **Resilient WebSocket Client**: Created auto-reconnecting WebSocket hook (`frontend/src/hooks/use-sentinel-ws.ts`) with bounded FIFO memory queue.
+- **DevOps & CI/CD**: Authored multi-container `docker-compose.yml` and automated GitHub Actions test workflow (`.github/workflows/ci.yml`).
+- **Detailed Specification**: See [Dilip's Full Role Document](docs/contributions/CONTRIBUTION_DILIP.md).
+
+---
+
+## 🧪 Verification & Automated Regression Suite
+
+The unified platform has been verified against a 33-test automated regression suite:
+
+| Test Module | Coverage Area | Tests | Status |
+|---|---|---|---|
+| `test_approval_guard.py` | Atomic state transitions & 409 Conflict guards | 2 | ✅ PASSED |
+| `test_matchers.py` | MITRE ATT&CK heuristics & YARA signature rules | 9 | ✅ PASSED |
+| `test_preprocessing.py` | 41→122 dim scaler/encoder feature transformations | 5 | ✅ PASSED |
+| `test_risk_scoring.py` | 5-signal weighted risk formula & boundaries | 6 | ✅ PASSED |
+| `test_suricata.py` | Suricata subprocess, eve.json parser & PCAP replay | 6 | ✅ PASSED |
+| `test_integration.py` | End-to-end ingest $\to$ triage $\to$ score $\to$ approve | 1 | ✅ PASSED |
+| `test_frontend_smoke.py` | Production build & Next.js route verification | 4 | ✅ PASSED |
+| **Total** | **All 7 Test Modules** | **33** | **✅ 100% Passing** |
