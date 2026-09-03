@@ -253,4 +253,4 @@ SentinelAI/
 
 This project is licensed under the [MIT License](LICENSE).
 
-Copyright © 2026 Yateesh Vijyakumar Mattur
+Copyright © 2026 Yateesh Vijaykumar Mattur
