@@ -54,10 +54,11 @@ jobs:
 
       - name: Run test suite
         env:
-          PYTHONPATH: .
+          PYTHONPATH: .:backend:agents:ml/signatures
           MONGO_URI: mongodb://localhost:27017
           MONGO_DB_NAME: sentinelai_test
           RESEARCH_MODE: "false"
-          JWT_SECRET_KEY: ci-test-secret-key-not-for-production
+          JWT_SECRET: "3e10e43de470eeb4fea76cb0a289a70fa3a285a10aa57f52ad02977a6bd21473e4bed5b03e5dae33e0edfbf1825fc4568a99c9228080456f38f291d5e19ece3e"
+          GROQ_API_KEY: "gsk_ci_test_key_mocked"
         run: |
           python -m pytest tests/ -v --tb=short

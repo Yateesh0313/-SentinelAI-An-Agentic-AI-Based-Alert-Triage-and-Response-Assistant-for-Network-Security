@@ -29,18 +29,18 @@ load_dotenv()
 _GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 _GROQ_MODEL: str = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
 
-if not _GROQ_API_KEY:
-    raise EnvironmentError(
-        "GROQ_API_KEY is not set. "
-        "Create an agents/.env file with GROQ_API_KEY=<your-key>."
-    )
-
 
 def _get_llm() -> ChatGroq:
     """Return a configured ChatGroq instance."""
+    api_key = os.getenv("GROQ_API_KEY") or _GROQ_API_KEY
+    if not api_key:
+        raise EnvironmentError(
+            "GROQ_API_KEY is not set. "
+            "Create an agents/.env file with GROQ_API_KEY=<your-key>."
+        )
     return ChatGroq(
         model=_GROQ_MODEL,
-        api_key=_GROQ_API_KEY,
+        api_key=api_key,
         max_tokens=2048,  # triage node needs room for <think> + answer
         temperature=0.2,
     )
