@@ -67,8 +67,8 @@ flowchart TB
     A --> E
     E --> D
     D --> F
-    B -.->|eve.json Alerts (Bypass ML)| F
-    C -.->|Decoy Probes (Bypass ML)| F
+    B -.->|"eve.json Alerts - Bypass ML"| F
+    C -.->|"Decoy Probes - Bypass ML"| F
     F --> G
     F --> H
     F --> I
@@ -78,11 +78,11 @@ flowchart TB
     J --> K
     K <--> M
     K --> L
-    K <-->|WebSocket| N
+    K <-->|"WebSocket Stream"| N
     N --> O
     N --> P
     N --> Q
-    O -->|POST /approve| K
+    O -->|"POST /approve"| K
 
     style Ingestion fill:#1a1a2e,stroke:#e94560,color:#fff
     style Detection fill:#16213e,stroke:#0f3460,color:#fff
