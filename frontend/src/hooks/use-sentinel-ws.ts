@@ -56,14 +56,37 @@ export interface HoneypotMeta {
   probe_bytes_len: number;
 }
 
+export interface SuricataMeta {
+  signature: string;
+  signature_id: number;
+  category: string;
+  severity: number;
+  severity_label: string;
+  tactic: string;
+  action: string;
+  gid: number;
+  rev: number;
+}
+
+export interface NetworkMeta {
+  src_ip: string;
+  src_port: number;
+  dst_ip: string;
+  dst_port: number;
+  proto: string;
+  timestamp: string;
+}
+
 export interface SentinelEvent {
   event_index: number;
   raw_event: Record<string, string | number>;
   prediction: string;
   confidence: number;
   actual?: string;
-  source?: "replay" | "honeypot" | "live_capture" | string;
+  source?: "replay" | "honeypot" | "suricata" | "live_capture" | string;
   honeypot_meta?: HoneypotMeta | null;
+  suricata_meta?: SuricataMeta | null;
+  network_meta?: NetworkMeta | null;
   triage?: string | null;
   severity?: string | null;
   severity_justification?: string | null;
@@ -119,6 +142,7 @@ export function useSentinelWS() {
   const [connected, setConnected]         = useState(false);
   const [replaying, setReplaying]         = useState(false);
   const [honeypotRunning, setHoneypotRunning] = useState(false);
+  const [suricataRunning, setSuricataRunning] = useState(false);
   const [authError, setAuthError]         = useState<string | null>(null);
   const [wsStatus, setWsStatus]           = useState<"connecting" | "connected" | "reconnecting" | "failed">("connecting");
   const [researchMode, setResearchMode]   = useState(false);
@@ -363,11 +387,48 @@ export function useSentinelWS() {
     }
   }, []);
 
+  // ── Suricata start ────────────────────────────────────────────────────────
+  const startSuricata = useCallback(async () => {
+    setAuthError(null);
+    try {
+      const res = await authedFetch(`${API_BASE}/suricata/start`);
+      if (res.status === 401) { setAuthError("Session expired — please sign in again."); return; }
+      if (res.status === 403) {
+        const data = await res.json();
+        setAuthError(data.detail || "Research Mode is disabled.");
+        return;
+      }
+      const data = await res.json();
+      if (data.status === "started" || data.status === "already_running") setSuricataRunning(true);
+    } catch (err) {
+      console.error("[SentinelWS] Start suricata error:", err);
+    }
+  }, []);
+
+  // ── Suricata stop ─────────────────────────────────────────────────────────
+  const stopSuricata = useCallback(async () => {
+    setAuthError(null);
+    try {
+      const res = await authedFetch(`${API_BASE}/suricata/stop`);
+      if (res.status === 401) { setAuthError("Session expired — please sign in again."); return; }
+      if (res.status === 403) {
+        const data = await res.json();
+        setAuthError(data.detail || "Research Mode is disabled.");
+        return;
+      }
+      const data = await res.json();
+      if (data.status === "stopped" || data.status === "not_running") setSuricataRunning(false);
+    } catch (err) {
+      console.error("[SentinelWS] Stop suricata error:", err);
+    }
+  }, []);
+
   return {
     events,
     connected,
     replaying,
     honeypotRunning,
+    suricataRunning,
     authError,
     wsStatus,
     researchMode,
@@ -376,6 +437,8 @@ export function useSentinelWS() {
     stopReplay,
     startHoneypot,
     stopHoneypot,
+    startSuricata,
+    stopSuricata,
     clearEvents,
     approveEvent,
     rejectEvent,

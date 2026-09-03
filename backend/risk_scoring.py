@@ -164,8 +164,9 @@ _SIG_SEVERITY_MAP: dict[str, float] = {
 # Source → suspicion base score
 _SOURCE_MAP: dict[str, float] = {
     "honeypot":     1.0,
-    "replay":       0.50,
+    "suricata":     0.80,  # Fired signature = high-confidence detection
     "live_capture": 0.60,
+    "replay":       0.50,
 }
 _DEFAULT_SOURCE = 0.40  # Unknown source
 
@@ -208,7 +209,7 @@ def _ml_signal(event: dict[str, Any]) -> float:
     prediction = event.get("prediction", "normal")
     confidence = float(event.get("confidence", 0.0))
 
-    if prediction in ("anomaly", "honeypot"):
+    if prediction in ("anomaly", "honeypot", "suricata_alert"):
         return min(confidence, 1.0)
     # For 'normal' predictions, confidence is P(normal) — invert it
     # so higher P(normal) = lower anomaly signal
