@@ -10,7 +10,12 @@
 
 > SentinelAI autonomously triages network intrusion alerts using an agentic AI pipeline—detecting anomalies with XGBoost, enriching context with MITRE ATT&CK mapping, YARA signature matching, and IP reputation, then presenting risk-scored alerts to SOC analysts for human-in-the-loop approval—reducing mean-time-to-respond from hours to seconds.
 
+**Basaveshwar Engineering College (Autonomous), Bagalkote**  
+**Department of Computer Science & Engineering | Final Year B.E. Major Project | VTU 2027**  
+📄 **Academic Documentation**: [Project Synopsis (Markdown)](docs/SentinelAI_Project_Synopsis_Updated.md) • [Project Synopsis (PDF)](docs/SentinelAI_Project_Synopsis_Updated.pdf) • [Team Contributions Matrix](TEAM_CONTRIBUTIONS.md)
+
 > **Phase 24 (Latest):** Premium professional light-theme dashboard — trending sparkline stat tiles, gradient headers, colored event-type stripes, detection-method comparison bars, live telemetry meters, and full button/card component system overhaul.
+
 
 ---
 
@@ -66,8 +71,8 @@ flowchart TB
     A --> E
     E --> D
     D --> F
-    B -.->|eve.json Alerts (Bypass ML)| F
-    C -.->|Decoy Probes (Bypass ML)| F
+    B -.->|"eve.json Alerts - Bypass ML"| F
+    C -.->|"Decoy Probes - Bypass ML"| F
     F --> G
     F --> H
     F --> I
@@ -77,11 +82,11 @@ flowchart TB
     J --> K
     K <--> M
     K --> L
-    K <-->|WebSocket| N
+    K <-->|"WebSocket Stream"| N
     N --> O
     N --> P
     N --> Q
-    O -->|POST /approve| K
+    O -->|"POST /approve"| K
 
     style Ingestion fill:#1a1a2e,stroke:#e94560,color:#fff
     style Detection fill:#16213e,stroke:#0f3460,color:#fff
@@ -248,14 +253,40 @@ SentinelAI/
 │       ├── app/          # Pages: homepage, dashboard, login
 │       ├── components/   # UI components (shadcn/ui Button, Card, Badge, Collapsible + 3D Hero)
 │       └── hooks/        # Custom hooks (WebSocket, auth)
+├── docs/                 # Major project synopsis & academic documentation
+│   ├── SentinelAI_Project_Synopsis_Updated.md
+│   ├── SentinelAI_Project_Synopsis_Updated.pdf
+│   └── contributions/    # Individual member architectural role specifications
+│       ├── CONTRIBUTION_YATEESH.md
+│       ├── CONTRIBUTION_SOMASHEKHAR.md
+│       ├── CONTRIBUTION_PRAVEEN.md
+│       └── CONTRIBUTION_DILIP.md
 ├── scripts/
 │   └── seed_demo.py      # One-command judge demo seed (28 events)
 ├── tests/                # pytest test suite (33 tests)
 ├── .github/workflows/    # CI pipeline (GitHub Actions)
 ├── docker-compose.yml    # MongoDB service
+├── TEAM_CONTRIBUTIONS.md # Comprehensive 4-member architectural matrix
+├── CONTRIBUTING.md       # Team contributions index
 ├── LICENSE               # MIT License
 └── README.md
 ```
+
+---
+
+## 👥 Team & Architectural Contributions
+
+**Basaveshwar Engineering College (BEC), Bagalkote**  
+**Department of Computer Science & Engineering | Final Year B.E. | VTU 2027**
+
+> 📄 For the full team architectural breakdown, see **[TEAM_CONTRIBUTIONS.md](TEAM_CONTRIBUTIONS.md)**.
+
+| Team Member | USN | Core Domain & Focus | Key Modules & Responsibilities | Branch | Detailed Role Doc |
+|---|---|---|---|---|---|
+| **Yateesh Mattur** | `2BA23CS125` | **Agentic AI & LLM Orchestration** | LangGraph multi-agent pipeline (`pipeline.py`), Groq LLM integration (Qwen 2.5 / Llama 3), Triage → Severity → Response agent reasoning nodes, MITRE ATT&CK heuristics mapping (`attack_mapping.py`), agent test suite | [`Yateesh0313-patch-1`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Yateesh0313-patch-1) | [Role Spec](docs/contributions/CONTRIBUTION_YATEESH.md) |
+| **Somashekhar Kadrolli** | `2BA23CS101` | **ML & Quantum Detection** | NSL-KDD dataset preprocessing pipeline (41→122 features with Scaler & OneHotEncoder), XGBoost & Random Forest classical anomaly detection classifiers, PennyLane Variational Quantum Classifier (VQC) comparative study | [`Somashekhar`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Somashekhar) | [Role Spec](docs/contributions/CONTRIBUTION_SOMASHEKHAR.md) |
+| **Praveen Nashi** | `2BA23CS071` | **Backend & Cybersecurity Integrations** | FastAPI REST & WebSocket streaming architecture (`main.py`), MongoDB async persistence (Motor), JWT authentication & RBAC security (`auth.py`), 5-signal weighted risk scoring engine (`risk_scoring.py`), IP reputation & GeoIP enrichment, YARA signatures, Suricata 7.0 IDS integration, honeypot deception module | [`Praveen-Nashi`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Praveen-Nashi) | [Role Spec](docs/contributions/CONTRIBUTION_PRAVEEN.md) |
+| **Dilip Holkar** | `2BA24CS402` | **Frontend, UI/UX & Deployment** | Next.js 16 + React 19 SOC dashboard (`dashboard/page.tsx`), shadcn/ui components (`button.tsx`, `collapsible.tsx`), Framer Motion interactive cards, Three.js & GSAP 3D network landing page, real-time WebSocket hook (`use-sentinel-ws.ts`), Docker containerization (`docker-compose.yml`), GitHub Actions CI/CD (`ci.yml`) | [`Dilip`](https://github.com/Yateesh0313/-SentinelAI-An-Agentic-AI-Based-Alert-Triage-and-Response-Assistant-for-Network-Security/tree/Dilip) | [Role Spec](docs/contributions/CONTRIBUTION_DILIP.md) |
 
 ---
 
@@ -263,4 +294,7 @@ SentinelAI/
 
 This project is licensed under the [MIT License](LICENSE).
 
-Copyright © 2026 Yateesh Vijyakumar Mattur
+Copyright © 2026 SentinelAI Team — Yateesh Vijaykumar Mattur, Somashekhar Kadrolli, Praveen Nashi, Dilip Holkar
+
+
+
