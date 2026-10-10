@@ -35,9 +35,10 @@ import joblib
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from datetime import datetime, timezone
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,11 @@ _honeypot_dir = str(_PROJECT_ROOT_EARLY / "ml" / "honeypot")
 if _honeypot_dir not in sys.path:
     sys.path.insert(0, _honeypot_dir)
 
+# Add ml/live_capture/ to sys.path for the Suricata ingestor
+_live_capture_dir = str(_PROJECT_ROOT_EARLY / "ml" / "live_capture")
+if _live_capture_dir not in sys.path:
+    sys.path.insert(0, _live_capture_dir)
+
 # ---------------------------------------------------------------------------
 # Paths to Phase 3/4 artifacts
 # ---------------------------------------------------------------------------
@@ -119,15 +125,17 @@ NUMERIC_COLS: list[str] = [c for c in FEATURE_COLS if c not in CATEGORICAL_COLS]
 # ---------------------------------------------------------------------------
 
 _model: Any = None
+_model_rf: Any = None
 _scaler: Any = None
 _encoder: Any = None
 
 
 def _load_artifacts() -> None:
     """Load the trained model and preprocessing objects into module globals."""
-    global _model, _scaler, _encoder
+    global _model, _model_rf, _scaler, _encoder
 
     model_path = _RESULTS_DIR / "classical_baseline_model.joblib"
+    rf_path = _RESULTS_DIR / "classical_rf_model.joblib"
     scaler_path = _PROCESSED_DIR / "scaler.joblib"
     encoder_path = _PROCESSED_DIR / "encoder.joblib"
 
@@ -142,9 +150,12 @@ def _load_artifacts() -> None:
     _scaler = joblib.load(scaler_path)
     _encoder = joblib.load(encoder_path)
 
-    print(f"  [startup] Loaded model   : {model_path.name}")
-    print(f"  [startup] Loaded scaler  : {scaler_path.name}")
-    print(f"  [startup] Loaded encoder : {encoder_path.name}")
+    print(f"  [startup] Loaded model (XGBoost) : {model_path.name}")
+    if rf_path.exists():
+        _model_rf = joblib.load(rf_path)
+        print(f"  [startup] Loaded model (RF)      : {rf_path.name}")
+    print(f"  [startup] Loaded scaler          : {scaler_path.name}")
+    print(f"  [startup] Loaded encoder         : {encoder_path.name}")
 
 
 # ---------------------------------------------------------------------------
@@ -250,13 +261,34 @@ import database as db
 from enrichment import enrich_ip
 from matcher import match_signatures
 from listener import HoneypotListener
+from suricata_ingest import SuricataIngestor
 from risk_scoring import calculate_risk_score
+from csv_exporter import (
+    append_honeypot_log,
+    export_honeypot_csv,
+    export_suricata_csv,
+    list_exported_csvs,
+    get_latest_csv,
+)
+from dataset_adapter import (
+    process_csv_upload,
+    generate_sample_csv,
+    SchemaDetectionError,
+)
+from interface_detect import (
+    detect_interfaces,
+    get_default_interface,
+)
+
 
 
 async def _store_event(event_data: dict[str, Any]) -> str:
     """Assign a unique event_id, persist to MongoDB, return the id."""
     event_id = str(uuid.uuid4())[:8]
-    await db.insert_event(event_data, event_id)
+    try:
+        await db.insert_event(event_data, event_id)
+    except Exception as exc:
+        logger.warning("MongoDB storage failed for event %s: %s", event_id, exc)
     return event_id
 
 
@@ -328,14 +360,19 @@ class DetectResponse(BaseModel):
 # Inference helper
 # ---------------------------------------------------------------------------
 
-def run_inference(event: NetworkEvent) -> tuple[str, float]:
-    """Preprocess a raw event and run the loaded model.
+def run_inference(event: NetworkEvent, model_type: str = "xgboost") -> tuple[str, float]:
+    """Preprocess a raw event and run the loaded model (XGBoost or Random Forest).
 
     Uses the SAME scaler/encoder from Phase 3 to guarantee consistency
     with Phase 4 training.
 
     Returns (prediction_label, confidence_score).
     """
+    # Select active model
+    active_model = _model_rf if (_model_rf is not None and model_type.lower() in ("rf", "random_forest")) else _model
+    if active_model is None:
+        raise RuntimeError("Detection model is not loaded.")
+
     # Build a single-row DataFrame matching training column order
     row_dict: dict[str, Any] = {}
     for col in FEATURE_COLS:
@@ -359,11 +396,11 @@ def run_inference(event: NetworkEvent) -> tuple[str, float]:
     X = np.hstack([num_scaled, cat_encoded])
 
     # Predict
-    pred = _model.predict(X)[0]
+    pred = active_model.predict(X)[0]
     label = "anomaly" if pred == 1 else "normal"
 
     # Confidence from predict_proba
-    proba = _model.predict_proba(X)[0]
+    proba = active_model.predict_proba(X)[0]
     confidence = float(proba[pred])
 
     return label, round(confidence, 4)
@@ -392,6 +429,10 @@ async def root() -> dict:
                 "GET /honeypot/start": "Start the honeypot listener (RESEARCH_MODE only)",
                 "GET /honeypot/stop": "Stop the honeypot listener (RESEARCH_MODE only)",
                 "GET /honeypot/status": "Check honeypot listener status",
+                "GET /interfaces": "List available network interfaces (excluding Bluetooth)",
+                "GET /suricata/start": "Start Suricata IDS engine (RESEARCH_MODE only)",
+                "GET /suricata/stop": "Stop Suricata IDS engine (RESEARCH_MODE only)",
+                "GET /suricata/status": "Check Suricata IDS engine status",
                 "POST /events/{id}/approve": "Approve a pending event",
                 "POST /events/{id}/reject": "Reject a pending event",
                 "POST /events/{id}/investigate": "Mark event as investigating",
@@ -557,14 +598,23 @@ async def triage(event: NetworkEvent) -> dict:
                       f"action={result['recommended_action']} [{event_id}]")
 
             except Exception as exc:
-                result["triage"] = ""
-                result["severity"] = "UNKNOWN"
-                result["severity_justification"] = f"Agent error: {exc}"
-                result["recommended_action"] = "flag_for_review"
+                try:
+                    from pipeline import heuristic_triage
+                    fb = heuristic_triage(raw)
+                    result["triage"] = fb["triage"]
+                    result["severity"] = fb["severity"]
+                    result["severity_justification"] = fb["severity_justification"]
+                    result["recommended_action"] = fb["recommended_action"]
+                except Exception:
+                    result["triage"] = "Anomalous traffic pattern detected requiring analyst verification."
+                    result["severity"] = "Medium"
+                    result["severity_justification"] = f"Fallback triage (Agent error: {exc})"
+                    result["recommended_action"] = "flag_for_review"
+
                 result["attack_techniques"] = []
                 result["ip_enrichment"] = None
                 result["agent_latency_seconds"] = 0
-                # Still compute risk score from available signals
+                # Compute risk score from available signals
                 risk = calculate_risk_score({
                     **result,
                     "prediction": label,
@@ -576,7 +626,8 @@ async def triage(event: NetworkEvent) -> dict:
                 event_id = await _store_event(result.copy())
                 result["event_id"] = event_id
                 result["status"] = "pending_review"
-                print(f"  [triage] Agent pipeline error: {exc} [{event_id}]")
+                print(f"  [triage] Agent pipeline fallback used ({exc}) -> {result['severity']} [{event_id}]")
+
         else:
             # Neither method flagged -- skip agent pipeline
             result["triage"] = None
@@ -746,9 +797,19 @@ async def _replay_loop() -> None:
                       f"sigs={sig_names} [{event_id}]")
 
             except Exception as exc:
-                message["triage"] = f"Agent error: {exc}"
-                message["severity"] = "UNKNOWN"
-                message["recommended_action"] = "flag_for_review"
+                try:
+                    from pipeline import heuristic_triage
+                    fb = heuristic_triage(payload)
+                    message["triage"] = fb["triage"]
+                    message["severity"] = fb["severity"]
+                    message["severity_justification"] = fb["severity_justification"]
+                    message["recommended_action"] = fb["recommended_action"]
+                except Exception:
+                    message["triage"] = "Anomalous traffic pattern detected requiring analyst verification."
+                    message["severity"] = "Medium"
+                    message["severity_justification"] = f"Fallback triage (Agent error: {exc})"
+                    message["recommended_action"] = "flag_for_review"
+
                 message["attack_techniques"] = []
                 message["ip_enrichment"] = None
                 message["agent_latency_seconds"] = 0
@@ -759,7 +820,7 @@ async def _replay_loop() -> None:
                 event_id = await _store_event(message.copy())
                 message["event_id"] = event_id
                 message["status"] = "pending_review"
-                print(f"  [replay] #{idx} Agent pipeline error: {exc} [{event_id}]")
+                print(f"  [replay] #{idx} Agent pipeline fallback used ({exc}) -> {message['severity']} [{event_id}]")
         else:
             message["event_id"] = None
             message["status"] = None
@@ -916,6 +977,28 @@ async def _honeypot_on_connection(event: dict) -> None:
         message["event_id"] = event_id
         message["status"] = "pending_review"
 
+        # Log honeypot connection to JSON-lines file and trigger CSV export
+        try:
+            hp_record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event_id": event_id,
+                "event_type": "honeypot_probe",
+                "src_ip": hp_meta.get("src_ip"),
+                "src_port": hp_meta.get("src_port"),
+                "dst_port": hp_meta.get("dst_port"),
+                "probe_text": hp_meta.get("probe_text"),
+                "probe_bytes_len": hp_meta.get("probe_bytes_len"),
+                "connection_id": hp_meta.get("connection_id"),
+                "severity": message.get("severity"),
+                "risk_score": message.get("risk_score"),
+                "recommended_action": message.get("recommended_action"),
+                "triage": message.get("triage"),
+            }
+            append_honeypot_log(hp_record)
+            asyncio.create_task(asyncio.to_thread(export_honeypot_csv))
+        except Exception as csv_exc:
+            logger.error("Honeypot CSV auto-export error: %s", csv_exc)
+
         conn_id = hp_meta.get("connection_id", "?")
         src = hp_meta.get("src_ip", "?")
         probe = hp_meta.get("probe_text", "")[:40]
@@ -926,9 +1009,19 @@ async def _honeypot_on_connection(event: dict) -> None:
         )
 
     except Exception as exc:
-        message["triage"] = f"Agent error: {exc}"
-        message["severity"] = "UNKNOWN"
-        message["recommended_action"] = "flag_for_review"
+        try:
+            from pipeline import heuristic_triage
+            fb = heuristic_triage(raw)
+            message["triage"] = f"Honeypot probe on port {hp_meta.get('dst_port', 0)}. {fb['triage']}"
+            message["severity"] = "High" if fb["severity"] in ("Critical", "High") else "Medium"
+            message["severity_justification"] = fb["severity_justification"]
+            message["recommended_action"] = "block_ip"
+        except Exception:
+            message["triage"] = f"Honeypot probe detected on port {hp_meta.get('dst_port', 0)}."
+            message["severity"] = "High"
+            message["severity_justification"] = f"Honeypot probe detection (Agent error: {exc})"
+            message["recommended_action"] = "block_ip"
+
         message["attack_techniques"] = []
         message["ip_enrichment"] = None
         message["agent_latency_seconds"] = 0
@@ -939,7 +1032,30 @@ async def _honeypot_on_connection(event: dict) -> None:
         event_id = await _store_event(message.copy())
         message["event_id"] = event_id
         message["status"] = "pending_review"
-        print(f"  [honeypot] Agent pipeline error: {exc} [{event_id}]")
+
+        # Log honeypot fallback event to JSON-lines file and trigger CSV export
+        try:
+            hp_record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event_id": event_id,
+                "event_type": "honeypot_probe",
+                "src_ip": hp_meta.get("src_ip"),
+                "src_port": hp_meta.get("src_port"),
+                "dst_port": hp_meta.get("dst_port"),
+                "probe_text": hp_meta.get("probe_text"),
+                "probe_bytes_len": hp_meta.get("probe_bytes_len"),
+                "connection_id": hp_meta.get("connection_id"),
+                "severity": message.get("severity"),
+                "risk_score": message.get("risk_score"),
+                "recommended_action": message.get("recommended_action"),
+                "triage": message.get("triage"),
+            }
+            append_honeypot_log(hp_record)
+            asyncio.create_task(asyncio.to_thread(export_honeypot_csv))
+        except Exception as csv_exc:
+            logger.error("Honeypot fallback CSV auto-export error: %s", csv_exc)
+
+        print(f"  [honeypot] Agent pipeline fallback used ({exc}) [{event_id}]")
 
     await _broadcast(message)
 
@@ -1016,6 +1132,551 @@ async def honeypot_status() -> dict:
     except Exception as exc:
         logger.error("Honeypot status error: %s", exc)
         raise HTTPException(status_code=500, detail=f"Failed to check honeypot status: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Suricata IDS (Phase 22)
+# ---------------------------------------------------------------------------
+
+_suricata: SuricataIngestor | None = None
+
+
+async def _suricata_on_alert(event: dict) -> None:
+    """Callback fired for each Suricata alert.
+
+    Suricata signature matches are positive detections by definition.
+    We skip the ML detection step (the signature IS the detection signal)
+    and go straight to the agent triage pipeline — identical to honeypot.
+    """
+    suricata_meta = event.get("suricata_meta", {})
+    network_meta = event.get("network_meta", {})
+    raw = event.get("raw_event", {})
+
+    # Run YARA signatures (some may also fire on Suricata events)
+    sig_matches = match_signatures(raw)
+
+    message: dict[str, Any] = {
+        "event_index": event.get("event_index", 0),
+        "raw_event": raw,
+        "prediction": event.get("prediction", "suricata_alert"),
+        "confidence": event.get("confidence", 1.0),
+        "source": "suricata",
+        "suricata_meta": suricata_meta,
+        "network_meta": network_meta,
+        "signature_matches": sig_matches,
+        "ml_flagged": False,   # ML was not run
+        "sig_flagged": len(sig_matches) > 0,
+    }
+
+    # Run agent triage pipeline (always — Suricata alert = always suspicious)
+    try:
+        from pipeline import run_pipeline  # noqa: F811
+
+        t0 = time_module.perf_counter()
+        agent_result = await asyncio.to_thread(run_pipeline, raw)
+        agent_time = time_module.perf_counter() - t0
+
+        message["triage"] = agent_result.get("triage", "")
+        message["severity"] = agent_result.get("severity", suricata_meta.get("severity_label", "UNKNOWN"))
+        message["severity_justification"] = agent_result.get(
+            "severity_justification", ""
+        )
+        message["recommended_action"] = agent_result.get(
+            "recommended_action", "flag_for_review"
+        )
+        message["attack_techniques"] = agent_result.get("attack_techniques", [])
+        message["agent_latency_seconds"] = round(agent_time, 2)
+
+        # IP enrichment
+        try:
+            enrichment_data = await enrich_ip(raw)
+            message["ip_enrichment"] = enrichment_data
+        except Exception as enrich_exc:
+            print(f"  [suricata] Enrichment error: {enrich_exc}")
+            message["ip_enrichment"] = None
+
+        # Formula-based risk score
+        risk = calculate_risk_score(message)
+        message["risk_score"]          = risk["risk_score"]
+        message["risk_classification"] = risk["risk_classification"]
+        message["risk_signals"]        = risk["risk_signals"]
+
+        # Store and broadcast
+        event_id = await _store_event(message.copy())
+        message["event_id"] = event_id
+        message["status"] = "pending_review"
+
+        # Auto-trigger Suricata CSV conversion
+        try:
+            asyncio.create_task(asyncio.to_thread(export_suricata_csv))
+        except Exception as csv_exc:
+            logger.error("Suricata CSV auto-export error: %s", csv_exc)
+
+        sig_name = suricata_meta.get("signature", "?")
+        src = network_meta.get("src_ip", "?")
+        print(
+            f"  [suricata] Alert #{event.get('event_index', '?')} {src} -> triage complete "
+            f"severity={message['severity']} risk={risk['risk_score']} {risk['risk_classification']} "
+            f"sig={sig_name} [{event_id}]"
+        )
+
+    except Exception as exc:
+        suricata_sev = suricata_meta.get("severity_label", "Medium")
+        try:
+            from pipeline import heuristic_triage
+            fb = heuristic_triage(raw)
+            message["triage"] = f"Suricata IDS alert: {suricata_meta.get('signature', 'Unknown')}. {fb['triage']}"
+            message["severity"] = suricata_sev if suricata_sev != "UNKNOWN" else fb["severity"]
+            message["severity_justification"] = fb["severity_justification"]
+            message["recommended_action"] = "block_ip" if message["severity"] in ("Critical", "High") else "flag_for_review"
+        except Exception:
+            message["triage"] = f"Suricata IDS alert: {suricata_meta.get('signature', 'Unknown')}"
+            message["severity"] = suricata_sev if suricata_sev != "UNKNOWN" else "Medium"
+            message["severity_justification"] = f"Suricata IDS detection (Agent error: {exc})"
+            message["recommended_action"] = "flag_for_review"
+
+        message["attack_techniques"] = []
+        message["ip_enrichment"] = None
+        message["agent_latency_seconds"] = 0
+        risk = calculate_risk_score(message)
+        message["risk_score"]          = risk["risk_score"]
+        message["risk_classification"] = risk["risk_classification"]
+        message["risk_signals"]        = risk["risk_signals"]
+        event_id = await _store_event(message.copy())
+        message["event_id"] = event_id
+        message["status"] = "pending_review"
+        print(f"  [suricata] Agent pipeline fallback used ({exc}) [{event_id}]")
+
+    await _broadcast(message)
+
+
+@app.get("/interfaces")
+async def get_network_interfaces() -> dict:
+    """List available network interfaces for live packet capture (excluding Bluetooth)."""
+    try:
+        ifaces = detect_interfaces()
+        default_iface = get_default_interface()
+        return {
+            "interfaces": ifaces,
+            "default": default_iface["name"] if default_iface else None,
+        }
+    except Exception as exc:
+        logger.error("Interface detection error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to detect network interfaces: {exc}")
+
+
+@app.get("/suricata/start")
+async def suricata_start(
+    interface: str | None = None,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Start Suricata IDS on a local interface (RESEARCH_MODE only)."""
+    _require_research_mode()
+    global _suricata
+
+    try:
+        if _suricata and _suricata.running:
+            return {
+                "status": "already_running",
+                "interface": _suricata.interface,
+                "alerts": _suricata.alert_count,
+                "events_per_minute": _suricata.events_per_minute,
+            }
+
+        # Resolve interface: if not supplied or 127.0.0.1, auto-detect default interface
+        target_iface = (interface or "").strip()
+        if not target_iface or target_iface == "127.0.0.1":
+            default_info = get_default_interface()
+            if default_info and default_info.get("name"):
+                target_iface = default_info["name"]
+            elif not target_iface:
+                target_iface = "127.0.0.1"
+
+        _suricata = SuricataIngestor(
+            interface=target_iface,
+            on_alert=_suricata_on_alert,
+        )
+
+        result = await _suricata.start()
+        result["interface"] = target_iface
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Suricata start error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to start Suricata: {exc}")
+
+
+@app.get("/suricata/stop")
+async def suricata_stop(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Stop the Suricata IDS engine (RESEARCH_MODE only)."""
+    _require_research_mode()
+    global _suricata
+
+    try:
+        if not _suricata or not _suricata.running:
+            return {"status": "not_running"}
+
+        result = await _suricata.stop()
+        _suricata = None
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Suricata stop error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to stop Suricata: {exc}")
+
+
+@app.get("/suricata/status")
+async def suricata_status() -> dict:
+    """Check the Suricata IDS engine status."""
+    try:
+        if _suricata and _suricata.running:
+            return {
+                "status": "running",
+                "interface": _suricata.interface,
+                "alerts": _suricata.alert_count,
+                "events_per_minute": _suricata.events_per_minute,
+                "uptime_seconds": _suricata.uptime_seconds,
+                "eve_json": str(_suricata.eve_json_path),
+            }
+        return {
+            "status": "stopped",
+            "interface": None,
+            "alerts": 0,
+            "events_per_minute": 0.0,
+            "uptime_seconds": 0.0,
+        }
+    except Exception as exc:
+        logger.error("Suricata status error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to check Suricata status: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Live Network Traffic Capture (Phase 24)
+# ---------------------------------------------------------------------------
+
+from network_monitor import LiveNetworkMonitor, get_available_interfaces as _get_live_interfaces
+
+_live_monitor: LiveNetworkMonitor | None = None
+
+
+async def _live_capture_on_event(event: dict) -> None:
+    """Callback fired for each completed connection from live capture.
+
+    Runs the full detection pipeline:
+      1. XGBoost ML classification
+      2. YARA signature matching
+      3. If anomaly detected → LLM agent triage → Risk scoring → Dashboard
+    """
+    meta = event.pop("_meta", {})
+    raw = event  # NSL-KDD-shaped features
+
+    # Step 1: ML Inference
+    try:
+        payload = {}
+        for col in FEATURE_COLS:
+            if col in CATEGORICAL_COLS:
+                payload[col] = str(raw.get(col, "other"))
+            else:
+                payload[col] = float(raw.get(col, 0))
+
+        net_event = NetworkEvent(**payload)
+        prediction, confidence = run_inference(net_event)
+    except Exception as exc:
+        prediction = "error"
+        confidence = 0.0
+        print(f"  [live-capture] ML inference error: {exc}")
+
+    # Step 2: YARA Signature matching
+    sig_matches = match_signatures(raw)
+    ml_flagged = prediction == "anomaly"
+    sig_flagged = len(sig_matches) > 0
+    should_triage = ml_flagged or sig_flagged
+
+    if should_triage and _live_monitor:
+        _live_monitor._anomaly_count += 1
+
+    # Build message
+    raw_event_index = raw.get("event_index", 0)
+    event_idx = int(raw_event_index) if raw_event_index else int(meta.get("capture_time", 0))
+
+    message: dict[str, Any] = {
+        "event_index": event_idx,
+        "raw_event": raw,
+        "prediction": prediction,
+        "confidence": confidence,
+        "source": "live_capture",
+        "network_meta": {
+            "src_ip": meta.get("src_ip", "unknown"),
+            "src_port": meta.get("src_port", 0),
+            "dst_ip": meta.get("dst_ip", "unknown"),
+            "dst_port": meta.get("dst_port", 0),
+            "proto": str(raw.get("protocol_type", "tcp")),
+            "packets": meta.get("packets", 1),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+        "signature_matches": sig_matches,
+        "ml_flagged": ml_flagged,
+        "sig_flagged": sig_flagged,
+    }
+
+    if should_triage:
+        trigger = "ml+sig" if (ml_flagged and sig_flagged) else ("ml" if ml_flagged else "sig")
+        try:
+            from pipeline import run_pipeline  # noqa: F811
+
+            t0 = time_module.perf_counter()
+            agent_result = await asyncio.to_thread(run_pipeline, raw)
+            agent_time = time_module.perf_counter() - t0
+
+            message["triage"] = agent_result.get("triage", "")
+            message["severity"] = agent_result.get("severity", "UNKNOWN")
+            message["severity_justification"] = agent_result.get(
+                "severity_justification", ""
+            )
+            message["recommended_action"] = agent_result.get(
+                "recommended_action", "flag_for_review"
+            )
+            message["attack_techniques"] = agent_result.get("attack_techniques", [])
+            message["agent_latency_seconds"] = round(agent_time, 2)
+
+            # IP enrichment (real IPs from live capture)
+            try:
+                enrichment_data = await enrich_ip(raw)
+                message["ip_enrichment"] = enrichment_data
+            except Exception as enrich_exc:
+                print(f"  [live-capture] Enrichment error: {enrich_exc}")
+                message["ip_enrichment"] = None
+
+            # Risk score
+            risk = calculate_risk_score(message)
+            message["risk_score"]          = risk["risk_score"]
+            message["risk_classification"] = risk["risk_classification"]
+            message["risk_signals"]        = risk["risk_signals"]
+
+            # Store and broadcast
+            event_id = await _store_event(message.copy())
+            message["event_id"] = event_id
+            message["status"] = "pending_review"
+
+            src = meta.get("src_ip", "?")
+            dst = meta.get("dst_ip", "?")
+            dst_port = meta.get("dst_port", 0)
+            print(
+                f"  [live-capture] FLAGGED ({trigger}) {src} -> {dst}:{dst_port} "
+                f"severity={message['severity']} risk={risk['risk_score']} "
+                f"{risk['risk_classification']} [{event_id}]"
+            )
+
+        except Exception as exc:
+            try:
+                from pipeline import heuristic_triage
+                fb = heuristic_triage(raw)
+                message["triage"] = fb["triage"]
+                message["severity"] = fb["severity"]
+                message["severity_justification"] = fb["severity_justification"]
+                message["recommended_action"] = fb["recommended_action"]
+            except Exception:
+                message["triage"] = "Live traffic anomaly detected requiring analyst review."
+                message["severity"] = "Medium"
+                message["severity_justification"] = f"Fallback triage (Agent error: {exc})"
+                message["recommended_action"] = "flag_for_review"
+
+            message["attack_techniques"] = []
+            message["ip_enrichment"] = None
+            message["agent_latency_seconds"] = 0
+            risk = calculate_risk_score(message)
+            message["risk_score"]          = risk["risk_score"]
+            message["risk_classification"] = risk["risk_classification"]
+            message["risk_signals"]        = risk["risk_signals"]
+            event_id = await _store_event(message.copy())
+            message["event_id"] = event_id
+            message["status"] = "pending_review"
+            print(f"  [live-capture] Agent fallback ({exc}) [{event_id}]")
+    else:
+        message["event_id"] = None
+        message["status"] = None
+
+    await _broadcast(message)
+
+
+@app.get("/live/interfaces")
+async def live_get_interfaces() -> dict:
+    """List available network interfaces for live traffic capture."""
+    try:
+        interfaces = _get_live_interfaces()
+        default_iface = None
+        for iface in interfaces:
+            if iface.get("is_up") and iface.get("ip"):
+                default_iface = iface.get("name")
+                break
+        if not default_iface and interfaces:
+            default_iface = interfaces[0].get("name")
+        return {
+            "interfaces": interfaces,
+            "count": len(interfaces),
+            "default": default_iface,
+        }
+    except Exception as exc:
+        logger.error("Interface detection error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to detect interfaces: {exc}")
+
+
+@app.get("/live/start")
+@app.post("/live/start")
+async def live_start(
+    interface: str = "Wi-Fi",
+    packet_limit: int = 0,
+    time_limit: int = 0,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Start live network traffic capture on a WiFi/Ethernet interface.
+
+    Parameters:
+        interface: Interface name ('Wi-Fi', 'Ethernet') or GUID
+        packet_limit: Max packets before auto-stop (0 = unlimited)
+        time_limit: Max seconds before auto-stop (0 = unlimited)
+    """
+    global _live_monitor
+
+    try:
+        if _live_monitor and _live_monitor.running:
+            return {"status": "already_running", **_live_monitor.stats}
+
+        _live_monitor = LiveNetworkMonitor(
+            interface=interface,
+            on_event=_live_capture_on_event,
+            packet_limit=packet_limit,
+            time_limit=time_limit,
+        )
+
+        result = await _live_monitor.start()
+        result["started_by"] = current_user["username"]
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Live capture start error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to start live capture: {exc}")
+
+
+@app.get("/live/stop")
+@app.post("/live/stop")
+async def live_stop(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Stop live network traffic capture."""
+    global _live_monitor
+
+    try:
+        if not _live_monitor or not _live_monitor.running:
+            return {"status": "not_running"}
+
+        result = await _live_monitor.stop()
+        result["stopped_by"] = current_user["username"]
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Live capture stop error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to stop live capture: {exc}")
+
+
+@app.get("/live/status")
+async def live_status() -> dict:
+    """Check live network traffic capture status."""
+    try:
+        if _live_monitor and _live_monitor.running:
+            return {"status": "running", **_live_monitor.stats}
+        return {
+            "status": "stopped",
+            "running": False,
+            "interface": None,
+            "events_processed": 0,
+            "anomalies_detected": 0,
+        }
+    except Exception as exc:
+        logger.error("Live capture status error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to check live capture status: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# CSV Log Export Endpoints (Phase 23)
+# ---------------------------------------------------------------------------
+
+@app.get("/logs/export/csv/{source}")
+async def export_csv(
+    source: str,
+    regenerate: bool = True,
+) -> FileResponse:
+    """Export Suricata eve.json alerts or honeypot logs to Excel-compatible CSV.
+
+    Parameters:
+      source: 'suricata' or 'honeypot'
+      regenerate: whether to trigger fresh conversion (default True)
+    """
+    src = source.lower().strip()
+    if src not in ("suricata", "honeypot"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid log source. Must be 'suricata' or 'honeypot'.",
+        )
+
+    try:
+        if regenerate:
+            if src == "suricata":
+                csv_path = await asyncio.to_thread(export_suricata_csv)
+            else:
+                csv_path = await asyncio.to_thread(export_honeypot_csv)
+        else:
+            csv_path = get_latest_csv(src)
+            if not csv_path:
+                if src == "suricata":
+                    csv_path = await asyncio.to_thread(export_suricata_csv)
+                else:
+                    csv_path = await asyncio.to_thread(export_honeypot_csv)
+
+        if not csv_path or not csv_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"No {src} CSV file could be generated.",
+            )
+
+        return FileResponse(
+            path=str(csv_path),
+            media_type="text/csv",
+            filename=csv_path.name,
+            headers={"Content-Disposition": f'attachment; filename="{csv_path.name}"'},
+        )
+    except FileNotFoundError as fnf:
+        logger.warning("CSV export file not found: %s", fnf)
+        raise HTTPException(status_code=404, detail=str(fnf))
+    except ValueError as ve:
+        logger.warning("CSV export value error: %s", ve)
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        logger.error("CSV export error for %s: %s", src, exc)
+        raise HTTPException(status_code=500, detail=f"CSV export failed: {exc}")
+
+
+@app.get("/logs/download-csv")
+async def download_csv_alias(source: str = "suricata") -> FileResponse:
+    """Convenience alias for downloading CSV by query parameter."""
+    return await export_csv(source=source)
+
+
+@app.get("/logs/csv/list")
+async def list_csvs() -> dict[str, Any]:
+    """List all generated CSV files in data/csv/."""
+    try:
+        files = list_exported_csvs()
+        return {"count": len(files), "files": files}
+    except Exception as exc:
+        logger.error("List CSVs error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to list CSV files: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1279,6 +1940,185 @@ async def stats_overview() -> dict:
             "honeypot_sourced": 0, "by_status": {}, "by_llm_severity": {},
             "by_risk_class": {}, "by_source": {},
         }
+
+
+# ---------------------------------------------------------------------------
+# Dataset Upload & Schema Mapping Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/dataset/upload")
+async def dataset_upload(
+    file: UploadFile = File(...),
+    model_type: str = Form("xgboost"),
+    max_rows: int = Form(100),
+) -> dict:
+    """Accept a CSV file, detect schema (NSL-KDD, CICIDS2017, UNSW-NB15),
+    map features to the trained model's NSL-KDD schema, and run detection + triage pipeline."""
+    if _model is None:
+        raise HTTPException(status_code=503, detail="Detection models not loaded.")
+
+    try:
+        contents = await file.read()
+        mapped_result = process_csv_upload(contents, max_rows=max_rows)
+    except SchemaDetectionError as sde:
+        return JSONResponse(status_code=400, content=sde.details)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "csv_processing_error",
+                "detail": f"Failed to process CSV: {exc}",
+            },
+        )
+
+    # Process rows through model + triage pipeline
+    total_processed = len(mapped_result.df_mapped)
+    anomalies_count = 0
+    normal_count = 0
+    triaged_count = 0
+    alerts_generated: list[dict] = []
+
+    model_label = "Random Forest" if model_type.lower() in ("rf", "random_forest") else "XGBoost"
+
+    for idx, row in mapped_result.df_mapped.iterrows():
+        row_dict = row.to_dict()
+        event = NetworkEvent(**row_dict)
+
+        # 1. Inference
+        try:
+            prediction, confidence = run_inference(event, model_type=model_type)
+        except Exception as exc:
+            prediction = "error"
+            confidence = 0.0
+
+        # 2. YARA Signature Matching
+        sig_matches = match_signatures(row_dict)
+        ml_flagged = prediction == "anomaly"
+        sig_flagged = len(sig_matches) > 0
+        should_triage = ml_flagged or sig_flagged
+
+        if ml_flagged:
+            anomalies_count += 1
+        else:
+            normal_count += 1
+
+        message: dict[str, Any] = {
+            "event_index": idx,
+            "raw_event": row_dict,
+            "prediction": prediction,
+            "confidence": confidence,
+            "source": "dataset_upload",
+            "dataset_schema": mapped_result.schema_name,
+            "model_used": model_label,
+            "signature_matches": sig_matches,
+            "ml_flagged": ml_flagged,
+            "sig_flagged": sig_flagged,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        if should_triage:
+            triaged_count += 1
+            try:
+                # LLM agent triage
+                from pipeline import run_pipeline
+                agent_result = await asyncio.to_thread(run_pipeline, row_dict)
+                message["triage"] = agent_result.get("triage", "")
+                message["severity"] = agent_result.get("severity", "UNKNOWN")
+                message["severity_justification"] = agent_result.get("severity_justification", "")
+                message["recommended_action"] = agent_result.get("recommended_action", "flag_for_review")
+                message["attack_techniques"] = agent_result.get("attack_techniques", [])
+                message["agent_latency_seconds"] = agent_result.get("agent_latency_seconds", 0.0)
+
+                # IP enrichment
+                try:
+                    message["ip_enrichment"] = await enrich_ip(row_dict)
+                except Exception:
+                    message["ip_enrichment"] = None
+
+                # Risk scoring
+                risk = calculate_risk_score(message)
+                message["risk_score"] = risk["risk_score"]
+                message["risk_classification"] = risk["risk_classification"]
+                message["risk_signals"] = risk["risk_signals"]
+
+                # MongoDB persistence & ID
+                event_id = await _store_event(message.copy())
+                message["event_id"] = event_id
+                message["status"] = "pending_review"
+
+            except Exception as exc:
+                # Heuristic fallback
+                try:
+                    from pipeline import heuristic_triage
+                    fb = heuristic_triage(row_dict)
+                    message["triage"] = fb["triage"]
+                    message["severity"] = fb["severity"]
+                    message["severity_justification"] = fb["severity_justification"]
+                    message["recommended_action"] = fb["recommended_action"]
+                except Exception:
+                    message["triage"] = "Anomalous traffic pattern detected from uploaded dataset."
+                    message["severity"] = "Medium"
+                    message["severity_justification"] = f"Fallback triage ({exc})"
+                    message["recommended_action"] = "flag_for_review"
+
+                message["attack_techniques"] = []
+                message["ip_enrichment"] = None
+                message["agent_latency_seconds"] = 0
+                risk = calculate_risk_score(message)
+                message["risk_score"] = risk["risk_score"]
+                message["risk_classification"] = risk["risk_classification"]
+                message["risk_signals"] = risk["risk_signals"]
+                event_id = await _store_event(message.copy())
+                message["event_id"] = event_id
+                message["status"] = "pending_review"
+
+            # Broadcast to WebSocket so live feed updates in real-time!
+            await _broadcast(message)
+
+            if len(alerts_generated) < 25:
+                alerts_generated.append({
+                    "event_id": message.get("event_id"),
+                    "row_index": idx,
+                    "prediction": prediction,
+                    "confidence": confidence,
+                    "severity": message.get("severity"),
+                    "risk_score": message.get("risk_score"),
+                    "risk_classification": message.get("risk_classification"),
+                    "recommended_action": message.get("recommended_action"),
+                    "triage_summary": message.get("triage"),
+                })
+        else:
+            message["event_id"] = None
+            message["status"] = None
+            # Broadcast normal events too so clients can see processing stream
+            await _broadcast(message)
+
+    return {
+        "status": "success",
+        "filename": file.filename or "dataset.csv",
+        "schema": mapped_result.schema_name,
+        "format_display": mapped_result.format_display,
+        "model_used": model_label,
+        "total_rows": mapped_result.total_rows,
+        "processed_rows": total_processed,
+        "anomalies_detected": anomalies_count,
+        "normal_traffic": normal_count,
+        "triaged_alerts": triaged_count,
+        "columns_matched": mapped_result.columns_matched,
+        "columns_defaulted": mapped_result.columns_defaulted,
+        "alerts": alerts_generated,
+    }
+
+
+@app.get("/dataset/sample/{template_name}")
+async def get_dataset_sample(template_name: str) -> Response:
+    """Return a valid benchmark CSV for testing (nsl, cic, unsw, or invalid)."""
+    csv_str = generate_sample_csv(template_name)
+    return Response(
+        content=csv_str,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{template_name}_sample.csv"'},
+    )
 
 
 # ---------------------------------------------------------------------------

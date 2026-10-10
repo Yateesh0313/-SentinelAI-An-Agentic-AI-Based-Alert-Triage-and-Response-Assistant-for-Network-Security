@@ -56,14 +56,79 @@ export interface HoneypotMeta {
   probe_bytes_len: number;
 }
 
+export interface SuricataMeta {
+  signature: string;
+  signature_id: number;
+  category: string;
+  severity: number;
+  severity_label: string;
+  tactic: string;
+  action: string;
+  gid: number;
+  rev: number;
+}
+
+export interface NetworkInterface {
+  name: string;
+  ip: string;
+  type: string;
+  active: boolean;
+  is_default: boolean;
+}
+
+export interface SuricataStatus {
+  status: "running" | "stopped" | string;
+  interface?: string | null;
+  alerts: number;
+  events_per_minute: number;
+  uptime_seconds: number;
+  eve_json?: string;
+}
+
+export interface NetworkMeta {
+  src_ip: string;
+  src_port: number;
+  dst_ip: string;
+  dst_port: number;
+  proto: string;
+  timestamp: string;
+  packets?: number;
+}
+
+export interface LiveCaptureStatus {
+  status: "running" | "stopped" | "already_running" | "not_running" | "error" | string;
+  running: boolean;
+  interface?: string | null;
+  uptime_seconds?: number;
+  events_processed?: number;
+  anomalies_detected?: number;
+  active_connections?: number;
+  total_connections?: number;
+  total_packets?: number;
+}
+
+export interface LiveInterface {
+  name: string;
+  description: string;
+  guid: string;
+  mac: string;
+  ip: string | null;
+  is_up: boolean;
+  type: "wifi" | "ethernet" | string;
+}
+
 export interface SentinelEvent {
   event_index: number;
   raw_event: Record<string, string | number>;
   prediction: string;
   confidence: number;
   actual?: string;
-  source?: "replay" | "honeypot" | "live_capture" | string;
+  source?: "replay" | "honeypot" | "suricata" | "live_capture" | "dataset_upload" | string;
+  dataset_schema?: string;
+  model_used?: string;
   honeypot_meta?: HoneypotMeta | null;
+  suricata_meta?: SuricataMeta | null;
+  network_meta?: NetworkMeta | null;
   triage?: string | null;
   severity?: string | null;
   severity_justification?: string | null;
@@ -119,6 +184,15 @@ export function useSentinelWS() {
   const [connected, setConnected]         = useState(false);
   const [replaying, setReplaying]         = useState(false);
   const [honeypotRunning, setHoneypotRunning] = useState(false);
+  const [suricataRunning, setSuricataRunning] = useState(false);
+  const [suricataStatus, setSuricataStatus]   = useState<SuricataStatus | null>(null);
+  const [liveCaptureRunning, setLiveCaptureRunning] = useState(false);
+  const [liveCaptureStatus, setLiveCaptureStatus]   = useState<LiveCaptureStatus | null>(null);
+  const [liveInterfaces, setLiveInterfaces]         = useState<LiveInterface[]>([]);
+  const [defaultLiveInterface, setDefaultLiveInterface] = useState<string>("Wi-Fi");
+  const [liveCaptureLoading, setLiveCaptureLoading] = useState(false);
+  const [interfaces, setInterfaces]           = useState<NetworkInterface[]>([]);
+  const [defaultInterface, setDefaultInterface] = useState<string>("");
   const [authError, setAuthError]         = useState<string | null>(null);
   const [wsStatus, setWsStatus]           = useState<"connecting" | "connected" | "reconnecting" | "failed">("connecting");
   const [researchMode, setResearchMode]   = useState(false);
@@ -126,6 +200,7 @@ export function useSentinelWS() {
   const reconnectAttempts  = useRef(0);
   const reconnectTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmounted          = useRef(false);
+  const scheduleReconnectRef = useRef<() => void>(() => {});
 
   // ── WebSocket connect (with auto-reconnect) ───────────────────────────────
   const connect = useCallback(() => {
@@ -138,7 +213,7 @@ export function useSentinelWS() {
     try {
       ws = new WebSocket(WS_URL);
     } catch {
-      scheduleReconnect();
+      scheduleReconnectRef.current();
       return;
     }
 
@@ -170,7 +245,7 @@ export function useSentinelWS() {
       if (unmounted.current) return;
       console.log("[SentinelWS] Disconnected — will reconnect…");
       setConnected(false);
-      scheduleReconnect();
+      scheduleReconnectRef.current();
     };
 
     ws.onerror = () => {
@@ -194,6 +269,78 @@ export function useSentinelWS() {
     setWsStatus("reconnecting");
     reconnectTimer.current = setTimeout(connect, RECONNECT_DELAY_MS);
   }, [connect]);
+  scheduleReconnectRef.current = scheduleReconnect;
+
+  // ── Network interfaces fetch ─────────────────────────────────────────────
+  const fetchInterfaces = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/interfaces`);
+      if (res.ok) {
+        const data = await res.json();
+        setInterfaces(data.interfaces || []);
+        if (data.default) {
+          setDefaultInterface(data.default);
+        }
+      }
+    } catch (err) {
+      console.error("[SentinelWS] Fetch interfaces error:", err);
+    }
+  }, []);
+
+  // ── Suricata status check ─────────────────────────────────────────────────
+  const checkSuricataStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/suricata/status`);
+      if (res.ok) {
+        const data = await res.json();
+        const isRunning = data.status === "running";
+        setSuricataRunning(isRunning);
+        setSuricataStatus(data);
+      }
+    } catch (err) {
+      console.error("[SentinelWS] Check suricata status error:", err);
+    }
+  }, []);
+
+  // ── Live Traffic Capture interfaces ───────────────────────────────────────
+  const fetchLiveInterfaces = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/live/interfaces`);
+      if (res.ok) {
+        const data = await res.json();
+        const ifaces: LiveInterface[] = data.interfaces || [];
+        setLiveInterfaces(ifaces);
+        if (data.default) {
+          setDefaultLiveInterface(data.default);
+        } else if (ifaces.length > 0) {
+          const upIface = ifaces.find((i) => i.is_up && i.ip);
+          if (upIface) setDefaultLiveInterface(upIface.name);
+          else setDefaultLiveInterface(ifaces[0].name);
+        }
+        return ifaces;
+      }
+    } catch (err) {
+      console.error("[SentinelWS] Fetch live interfaces error:", err);
+    }
+    return [];
+  }, []);
+
+  // ── Live Traffic Capture status check ─────────────────────────────────────
+  const checkLiveCaptureStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/live/status`);
+      if (res.ok) {
+        const data: LiveCaptureStatus = await res.json();
+        const isRunning = data.status === "running" || data.running === true;
+        setLiveCaptureRunning(isRunning);
+        setLiveCaptureStatus(data);
+        return data;
+      }
+    } catch (err) {
+      console.error("[SentinelWS] Check live capture status error:", err);
+    }
+    return null;
+  }, []);
 
   useEffect(() => {
     unmounted.current = false;
@@ -219,6 +366,16 @@ export function useSentinelWS() {
         }
       })
       .catch(() => { /* backend may still be starting */ });
+
+    // Fetch network interfaces and initial Suricata & Live Capture status
+    const initNetworkStatus = async () => {
+      await fetchInterfaces();
+      await checkSuricataStatus();
+      await fetchLiveInterfaces();
+      await checkLiveCaptureStatus();
+    };
+    initNetworkStatus();
+
     return () => {
       unmounted.current = true;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
@@ -363,11 +520,145 @@ export function useSentinelWS() {
     }
   }, []);
 
+  // ── Periodic polling for Suricata status when running ─────────────────────
+  useEffect(() => {
+    if (!suricataRunning) return;
+    const interval = setInterval(() => {
+      checkSuricataStatus();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [suricataRunning, checkSuricataStatus]);
+
+  // ── Suricata start ────────────────────────────────────────────────────────
+  const startSuricata = useCallback(async (selectedInterface?: string) => {
+    setAuthError(null);
+    try {
+      const url = selectedInterface
+        ? `${API_BASE}/suricata/start?interface=${encodeURIComponent(selectedInterface)}`
+        : `${API_BASE}/suricata/start`;
+      const res = await authedFetch(url);
+      if (res.status === 401) { setAuthError("Session expired — please sign in again."); return; }
+      if (res.status === 403) {
+        const data = await res.json();
+        setAuthError(data.detail || "Research Mode is disabled.");
+        return;
+      }
+      const data = await res.json();
+      if (data.status === "started" || data.status === "already_running") {
+        setSuricataRunning(true);
+        checkSuricataStatus();
+      }
+    } catch (err) {
+      console.error("[SentinelWS] Start suricata error:", err);
+    }
+  }, [checkSuricataStatus]);
+
+  // ── Suricata stop ─────────────────────────────────────────────────────────
+  const stopSuricata = useCallback(async () => {
+    setAuthError(null);
+    try {
+      const res = await authedFetch(`${API_BASE}/suricata/stop`);
+      if (res.status === 401) { setAuthError("Session expired — please sign in again."); return; }
+      if (res.status === 403) {
+        const data = await res.json();
+        setAuthError(data.detail || "Research Mode is disabled.");
+        return;
+      }
+      const data = await res.json();
+      if (data.status === "stopped" || data.status === "not_running") {
+        setSuricataRunning(false);
+        checkSuricataStatus();
+      }
+    } catch (err) {
+      console.error("[SentinelWS] Stop suricata error:", err);
+    }
+  }, [checkSuricataStatus]);
+
+
+
+  // ── Periodic polling for Live Traffic Capture status when running ─────────
+  useEffect(() => {
+    if (!liveCaptureRunning) return;
+    const interval = setInterval(() => {
+      checkLiveCaptureStatus();
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [liveCaptureRunning, checkLiveCaptureStatus]);
+
+  // ── Live Traffic Capture start ───────────────────────────────────────────
+  const startLiveCapture = useCallback(async (selectedInterface?: string, packetLimit = 0, timeLimit = 0) => {
+    setAuthError(null);
+    setLiveCaptureLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedInterface) params.set("interface", selectedInterface);
+      if (packetLimit > 0) params.set("packet_limit", packetLimit.toString());
+      if (timeLimit > 0) params.set("time_limit", timeLimit.toString());
+      const query = params.toString() ? `?${params.toString()}` : "";
+
+      const res = await authedFetch(`${API_BASE}/live/start${query}`);
+      if (res.status === 401) { setAuthError("Session expired — please sign in again."); return false; }
+      if (res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data.detail || "Forbidden — insufficient permissions.");
+        return false;
+      }
+      const data = await res.json();
+      if (data.status === "started" || data.status === "already_running") {
+        setLiveCaptureRunning(true);
+        setLiveCaptureStatus(data);
+        checkLiveCaptureStatus();
+        return true;
+      } else if (data.status === "error") {
+        setAuthError(data.detail || "Failed to start live traffic capture");
+        return false;
+      }
+      return false;
+    } catch (err) {
+      console.error("[SentinelWS] Start live capture error:", err);
+      return false;
+    } finally {
+      setLiveCaptureLoading(false);
+    }
+  }, [checkLiveCaptureStatus]);
+
+  // ── Live Traffic Capture stop ────────────────────────────────────────────
+  const stopLiveCapture = useCallback(async () => {
+    setAuthError(null);
+    setLiveCaptureLoading(true);
+    try {
+      const res = await authedFetch(`${API_BASE}/live/stop`);
+      if (res.status === 401) { setAuthError("Session expired — please sign in again."); return false; }
+      const data = await res.json();
+      if (data.status === "stopped" || data.status === "not_running") {
+        setLiveCaptureRunning(false);
+        setLiveCaptureStatus(data);
+        checkLiveCaptureStatus();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("[SentinelWS] Stop live capture error:", err);
+      return false;
+    } finally {
+      setLiveCaptureLoading(false);
+    }
+  }, [checkLiveCaptureStatus]);
+
   return {
     events,
     connected,
     replaying,
     honeypotRunning,
+    suricataRunning,
+    suricataStatus,
+    liveCaptureRunning,
+    liveCaptureStatus,
+    liveInterfaces,
+    defaultLiveInterface,
+    liveCaptureLoading,
+    interfaces,
+    defaultInterface,
     authError,
     wsStatus,
     researchMode,
@@ -376,6 +667,14 @@ export function useSentinelWS() {
     stopReplay,
     startHoneypot,
     stopHoneypot,
+    startSuricata,
+    stopSuricata,
+    startLiveCapture,
+    stopLiveCapture,
+    fetchInterfaces,
+    fetchLiveInterfaces,
+    checkSuricataStatus,
+    checkLiveCaptureStatus,
     clearEvents,
     approveEvent,
     rejectEvent,

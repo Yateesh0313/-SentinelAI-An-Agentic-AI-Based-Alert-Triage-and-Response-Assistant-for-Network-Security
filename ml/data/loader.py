@@ -1,8 +1,9 @@
 """NSL-KDD dataset loader and preprocessor.
 
-Parses .arff files manually (scipy.io.arff chokes on malformed nominal
-declarations in this dataset), encodes categoricals, scales numerics,
-and saves processed splits for downstream model training.
+Loads clean, flat CSV files from /data/csv/ (converted from .arff),
+encodes categoricals, scales numerics, and saves processed splits
+for downstream model training. Retains ARFF parsing capability for
+backward compatibility and initial conversions.
 """
 
 from __future__ import annotations
@@ -21,26 +22,68 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 # ---------------------------------------------------------------------------
 
 _THIS_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _THIS_DIR.parent.parent
+_CSV_DIR = _PROJECT_ROOT / "data" / "csv"
 _RAW_DIR = _THIS_DIR / "raw" / "nsl_kdd"
 _PROCESSED_DIR = _THIS_DIR / "processed"
 
-_TRAIN_FULL = _RAW_DIR / "KDDTrain+.arff"
-_TRAIN_20 = _RAW_DIR / "KDDTrain+_20Percent.arff"
-_TEST = _RAW_DIR / "KDDTest+.arff"
+# CSV dataset paths (primary, fast, flat format)
+_TRAIN_FULL_CSV = _CSV_DIR / "KDDTrain+.csv"
+_TRAIN_20_CSV = _CSV_DIR / "KDDTrain+_20Percent.csv"
+_TEST_CSV = _CSV_DIR / "KDDTest+.csv"
+
+# ARFF dataset paths (raw historical archive)
+_TRAIN_FULL_ARFF = _RAW_DIR / "KDDTrain+.arff"
+_TRAIN_20_ARFF = _RAW_DIR / "KDDTrain+_20Percent.arff"
+_TEST_ARFF = _RAW_DIR / "KDDTest+.arff"
+
+# Default aliases for backward compatibility
+_TRAIN_FULL = _TRAIN_FULL_CSV if _TRAIN_FULL_CSV.exists() else _TRAIN_FULL_ARFF
+_TRAIN_20 = _TRAIN_20_CSV if _TRAIN_20_CSV.exists() else _TRAIN_20_ARFF
+_TEST = _TEST_CSV if _TEST_CSV.exists() else _TEST_ARFF
 
 # The three categorical columns in the NSL-KDD dataset
 CATEGORICAL_COLS: list[str] = ["protocol_type", "service", "flag"]
 
 
 # ---------------------------------------------------------------------------
-# 1. load_arff
+# 1. load_csv
+# ---------------------------------------------------------------------------
+
+def load_csv(filepath: str | Path) -> pd.DataFrame:
+    """Load a dataset from a clean CSV file into a pandas DataFrame.
+
+    Ensures numeric features are properly cast to float types and categoricals
+    are preserved as strings.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with 42 columns (41 features + 'class').
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        raise FileNotFoundError(f"CSV file not found: {filepath}")
+
+    df = pd.read_csv(filepath)
+
+    # Convert numeric columns to float (everything except categoricals and class)
+    for col in df.columns:
+        if col not in CATEGORICAL_COLS and col != "class":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# 2. load_arff (Retained for ARFF handling and backwards compatibility)
 # ---------------------------------------------------------------------------
 
 def load_arff(filepath: str | Path) -> pd.DataFrame:
     """Parse a single .arff file into a pandas DataFrame.
 
     Reads @attribute lines to get column names, then reads CSV rows after
-    the @data marker.  This avoids scipy.io.arff which fails on the
+    the @data marker. This avoids scipy.io.arff which fails on the
     malformed nominal declaration for ``protocol_type``.
 
     Returns
@@ -49,10 +92,15 @@ def load_arff(filepath: str | Path) -> pd.DataFrame:
         DataFrame with 42 columns (41 features + 'class').
     """
     filepath = Path(filepath)
+    # If a corresponding .csv already exists, prefer the fast CSV path
+    csv_equivalent = _CSV_DIR / f"{filepath.stem}.csv"
+    if csv_equivalent.exists():
+        return load_csv(csv_equivalent)
+
     col_names: list[str] = []
     data_start_idx: int = -1
 
-    with open(filepath, encoding="utf-8") as fh:
+    with open(filepath, encoding="utf-8", errors="replace") as fh:
         lines = fh.readlines()
 
     # Pass 1 — extract column names from @attribute lines
@@ -61,11 +109,12 @@ def load_arff(filepath: str | Path) -> pd.DataFrame:
         lower = stripped.lower()
 
         if lower.startswith("@attribute"):
-            # Format: @attribute 'name' type_or_{values}
-            # Strip @attribute, then parse the quoted or unquoted name
             rest = stripped[len("@attribute"):].strip()
             if rest.startswith("'"):
                 end_quote = rest.index("'", 1)
+                name = rest[1:end_quote]
+            elif rest.startswith('"'):
+                end_quote = rest.index('"', 1)
                 name = rest[1:end_quote]
             else:
                 name = rest.split()[0]
@@ -99,14 +148,25 @@ def load_arff(filepath: str | Path) -> pd.DataFrame:
     return df
 
 
+def load_dataset(filepath: str | Path) -> pd.DataFrame:
+    """Load either a .csv or .arff dataset file automatically based on extension."""
+    filepath = Path(filepath)
+    if filepath.suffix.lower() == ".csv":
+        return load_csv(filepath)
+    return load_arff(filepath)
+
+
 # ---------------------------------------------------------------------------
-# 2. load_nsl_kdd
+# 3. load_nsl_kdd
 # ---------------------------------------------------------------------------
 
 def load_nsl_kdd(
     use_20_percent: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load NSL-KDD train and test sets as raw DataFrames.
+    """Load NSL-KDD train and test sets as DataFrames from clean CSV files.
+
+    If CSV files are available in data/csv/, loads them instantly.
+    Falls back to .arff files if CSVs have not been generated yet.
 
     Parameters
     ----------
@@ -118,22 +178,29 @@ def load_nsl_kdd(
     (train_df, test_df)
         Two DataFrames with original string values, no encoding applied.
     """
-    train_path = _TRAIN_20 if use_20_percent else _TRAIN_FULL
-    test_path = _TEST
+    train_csv = _TRAIN_20_CSV if use_20_percent else _TRAIN_FULL_CSV
+    test_csv = _TEST_CSV
 
-    if not train_path.exists():
-        raise FileNotFoundError(f"Training file not found: {train_path}")
-    if not test_path.exists():
-        raise FileNotFoundError(f"Test file not found: {test_path}")
+    if train_csv.exists() and test_csv.exists():
+        return load_csv(train_csv), load_csv(test_csv)
 
-    train_df = load_arff(train_path)
-    test_df = load_arff(test_path)
+    # Fallback to ARFF
+    train_arff = _TRAIN_20_ARFF if use_20_percent else _TRAIN_FULL_ARFF
+    test_arff = _TEST_ARFF
+
+    if not train_arff.exists():
+        raise FileNotFoundError(f"Training file not found: {train_arff} or {train_csv}")
+    if not test_arff.exists():
+        raise FileNotFoundError(f"Test file not found: {test_arff} or {test_csv}")
+
+    train_df = load_arff(train_arff)
+    test_df = load_arff(test_arff)
 
     return train_df, test_df
 
 
 # ---------------------------------------------------------------------------
-# 3. preprocess
+# 4. preprocess
 # ---------------------------------------------------------------------------
 
 def preprocess(
@@ -159,7 +226,7 @@ def preprocess(
     Returns
     -------
     (X_train, y_train, X_test, y_test)
-        All as numpy arrays.  X arrays are float64, y arrays are int64.
+        All as numpy arrays. X arrays are float64, y arrays are int64.
     """
     # --- Labels -----------------------------------------------------------
     y_train = (train_df["class"] != "normal").astype(np.int64).values

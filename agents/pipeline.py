@@ -104,10 +104,29 @@ class AlertState(TypedDict):
 # ---------------------------------------------------------------------------
 
 _TRIAGE_SYSTEM = (
-    "You are a network security analyst. You receive a structured network event "
-    "and must explain IN PLAIN ENGLISH why the pattern could be suspicious. "
-    "Ground your analysis STRICTLY in the fields provided — do NOT invent "
-    "details that are not in the input. Be concise (3-5 sentences max)."
+    "You are a network security analyst explaining alerts to a NON-TECHNICAL reader.\n"
+    "\n"
+    "Given a structured network event and an optional list of matched MITRE ATT&CK\n"
+    "technique IDs, produce an explanation that follows this EXACT 3-part structure:\n"
+    "\n"
+    "1. WHAT HAPPENED — one plain-language sentence. If a technical term is\n"
+    "   unavoidable (e.g. 'SYN flood'), explain it immediately with a simple\n"
+    "   analogy (e.g. 'like flooding a phone line with calls so no one else can\n"
+    "   get through'). Never use unexplained jargon.\n"
+    "2. WHY IT MATTERS — one sentence connecting the severity to a real-world\n"
+    "   consequence the reader can picture (e.g. 'this could make the site\n"
+    "   unreachable for real users').\n"
+    "3. WHAT WE RECOMMEND — one sentence stating the suggested action and WHY it\n"
+    "   helps.\n"
+    "\n"
+    "RULES:\n"
+    "- Keep the TOTAL explanation to 4 sentences or fewer.\n"
+    "- Ground every claim STRICTLY in the event fields — do NOT invent details.\n"
+    "- If MITRE ATT&CK IDs are provided, append them as a small reference tag on a\n"
+    "  new line at the end, formatted like:  [Ref: T1046 — Network Service Discovery]\n"
+    "  Do NOT weave the ID into the main sentences.\n"
+    "- If no ATT&CK IDs are provided, omit the reference tag entirely.\n"
+    "- Write as if the reader has ZERO security training.\n"
 )
 
 _SEVERITY_SYSTEM = (
@@ -134,27 +153,45 @@ _RESPONSE_SYSTEM = (
 # ---------------------------------------------------------------------------
 
 def triage_node(state: AlertState) -> dict:
-    """Analyse the network event and explain why it may be suspicious.
+    """Analyse the network event and produce a structured 3-part explanation.
 
-    After the LLM produces a plain-English explanation, the raw event is
-    run through the deterministic ATT&CK mapping lookup (attack_mapping.py)
-    to attach zero or more MITRE technique IDs.  The LLM is NOT asked to
-    guess technique IDs — that comes from the rule-based lookup only.
+    Flow:
+      1. Run the deterministic ATT&CK mapping first so we can feed the
+         matched technique IDs into the LLM prompt as context.
+      2. Call the LLM with the structured triage prompt.  The LLM is told
+         to append ATT&CK IDs as small reference tags — it does NOT guess
+         the IDs; they come from the rule-based lookup only.
     """
     llm = _get_llm()
     raw_event = state["alert"]
     alert_json = json.dumps(raw_event, indent=2)
 
+    # --- ATT&CK mapping (deterministic, NOT LLM-generated) ---
+    techniques = map_attack_techniques(raw_event)
+
+    # Build the user message, including ATT&CK IDs when available
+    attack_context = ""
+    if techniques:
+        tag_lines = ", ".join(
+            f"{t['id']} — {t['name']}" for t in techniques
+        )
+        attack_context = (
+            f"\n\nMatched MITRE ATT&CK techniques (use as reference tags):\n"
+            f"{tag_lines}"
+        )
+
+    user_prompt = (
+        f"Analyse this network event:\n```json\n{alert_json}\n```"
+        f"{attack_context}"
+    )
+
     try:
         response = llm.invoke([
             SystemMessage(content=_TRIAGE_SYSTEM),
-            HumanMessage(content=f"Analyse this network event:\n```json\n{alert_json}\n```"),
+            HumanMessage(content=user_prompt),
         ])
         explanation: str = response.content.strip()  # type: ignore[union-attr]
         explanation = _strip_thinking(explanation)
-
-        # --- ATT&CK mapping (deterministic, NOT LLM-generated) ---
-        techniques = map_attack_techniques(raw_event)
 
         _safe_print(f"\n{'='*60}")
         _safe_print("  TRIAGE NODE")

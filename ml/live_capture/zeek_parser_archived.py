@@ -1,3 +1,12 @@
+# ============================================================================
+# ARCHIVED — Phase 22 replaced Zeek with Suricata as the live detection engine.
+#
+# This file is preserved for reference only.  The active live-capture ingestor
+# is suricata_ingest.py which reads Suricata's eve.json alerts (already
+# classified by signature, category, and severity) instead of attempting the
+# fragile 12-of-41 feature mapping that this Zeek parser performed.
+# ============================================================================
+
 """SentinelAI — Zeek conn.log Parser (Phase 14).
 
 Parses Zeek's conn.log TSV output and maps connection records to the

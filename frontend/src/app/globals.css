@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -45,39 +44,72 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ── Light Theme (default) — Professional Blue-Indigo-Slate palette ──────── */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --radius: 0.75rem;
+
+  /* Base */
+  --background: oklch(0.975 0.006 248);        /* very light blue-grey */
+  --foreground: oklch(0.18 0.025 248);          /* deep navy text */
+
+  /* Card surfaces */
+  --card: oklch(1 0 0);                         /* pure white cards */
+  --card-foreground: oklch(0.18 0.025 248);
+
+  /* Popovers */
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.714);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.18 0.025 248);
+
+  /* Primary — rich indigo-blue */
+  --primary: oklch(0.52 0.22 264);
+  --primary-foreground: oklch(1 0 0);
+
+  /* Secondary — soft blue-grey */
+  --secondary: oklch(0.94 0.012 248);
+  --secondary-foreground: oklch(0.28 0.04 248);
+
+  /* Muted */
+  --muted: oklch(0.94 0.008 248);
+  --muted-foreground: oklch(0.52 0.025 248);
+
+  /* Accent — vibrant indigo */
+  --accent: oklch(0.92 0.04 264);
+  --accent-foreground: oklch(0.35 0.12 264);
+
+  /* Destructive — rich red */
+  --destructive: oklch(0.58 0.22 27);
+
+  /* Borders & inputs */
+  --border: oklch(0.88 0.012 248);
+  --input: oklch(0.91 0.01 248);
+  --ring: oklch(0.52 0.22 264);
+
+  /* Charts — vibrant multi-hue */
+  --chart-1: oklch(0.58 0.22 264);   /* indigo */
+  --chart-2: oklch(0.62 0.18 180);   /* teal */
+  --chart-3: oklch(0.58 0.20 140);   /* emerald */
+  --chart-4: oklch(0.65 0.22 40);    /* amber */
+  --chart-5: oklch(0.58 0.24 15);    /* red */
+
+  /* Sidebar */
+  --sidebar: oklch(0.99 0.004 248);
+  --sidebar-foreground: oklch(0.25 0.03 248);
+  --sidebar-primary: oklch(0.52 0.22 264);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.92 0.04 264);
+  --sidebar-accent-foreground: oklch(0.35 0.12 264);
+  --sidebar-border: oklch(0.88 0.012 248);
+  --sidebar-ring: oklch(0.52 0.22 264);
+
+  /* Custom SentinelAI tokens */
+  --sentinel-primary:   #4f46e5;  /* indigo-600 */
+  --sentinel-secondary: #0891b2;  /* cyan-600 */
+  --sentinel-danger:    #dc2626;  /* red-600 */
+  --sentinel-warning:   #d97706;  /* amber-600 */
+  --sentinel-success:   #059669;  /* emerald-600 */
+  --sentinel-surface:   #f8fafc;  /* slate-50 */
+  --sentinel-card:      #ffffff;
+  --sentinel-border:    #e2e8f0;  /* slate-200 */
 }
 
 .dark {
@@ -122,4 +154,217 @@
     @apply bg-background text-foreground;
     font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   }
+
+  /* Smooth scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* CSS animations                                                              */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeScaleIn {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shakeX {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-8px); }
+  40%      { transform: translateX(6px); }
+  60%      { transform: translateX(-4px); }
+  80%      { transform: translateX(2px); }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes progressFill {
+  from { width: 0; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.15); }
+  50%       { box-shadow: 0 0 0 8px rgba(79, 70, 229, 0); }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Premium Dashboard Utility Classes                                           */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* Glassmorphism card for light theme */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 4px rgba(15, 23, 42, 0.04);
+}
+
+.glass-card:hover {
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.1), 0 2px 8px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
+  transition: all 0.2s ease;
+}
+
+/* Stat card with colored top-border accent */
+.stat-card {
+  background: white;
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.05);
+  transition: all 0.2s ease;
+  overflow: hidden;
+  position: relative;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 1rem 1rem 0 0;
+}
+.stat-card.accent-indigo::before { background: linear-gradient(90deg, #4f46e5, #818cf8); }
+.stat-card.accent-cyan::before   { background: linear-gradient(90deg, #0891b2, #22d3ee); }
+.stat-card.accent-red::before    { background: linear-gradient(90deg, #dc2626, #f87171); }
+.stat-card.accent-amber::before  { background: linear-gradient(90deg, #d97706, #fbbf24); }
+.stat-card.accent-emerald::before { background: linear-gradient(90deg, #059669, #34d399); }
+.stat-card.accent-fuchsia::before { background: linear-gradient(90deg, #a21caf, #e879f9); }
+.stat-card.accent-teal::before   { background: linear-gradient(90deg, #0d9488, #2dd4bf); }
+.stat-card.accent-violet::before { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
+
+.stat-card:hover {
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Trend indicator */
+.trend-up   { color: #059669; }
+.trend-down { color: #dc2626; }
+
+/* Animated progress bar */
+.progress-bar-fill {
+  animation: progressFill 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Shimmer loading skeleton */
+.skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.5rem;
+}
+
+/* Premium badge */
+.badge-live {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #15803d;
+  border: 1px solid #86efac;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Severity ring glow */
+.severity-critical { box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15); }
+.severity-high     { box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12); }
+.severity-medium   { box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1); }
+.severity-low      { box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1); }
+
+/* Tab underline active */
+.tab-active {
+  color: #4f46e5;
+  border-bottom-color: #4f46e5;
+  background: linear-gradient(to bottom, transparent, rgba(79, 70, 229, 0.04));
+}
+
+/* Dashboard gradient header */
+.dashboard-header {
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #f0f9ff 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Event card left stripe */
+.event-card-anomaly  { border-left: 3px solid #dc2626; }
+.event-card-honeypot { border-left: 3px solid #a21caf; }
+.event-card-suricata { border-left: 3px solid #0891b2; }
+.event-card-normal   { border-left: 3px solid #e2e8f0; }
+.event-card-approved { border-left: 3px solid #059669; }
+.event-card-rejected { border-left: 3px solid #94a3b8; }
+
+/* Custom scrollbar for modal */
+.custom-scrollbar::-webkit-scrollbar { width: 5px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; border-radius: 999px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Inline count-up animation */
+.count-animate {
+  animation: countUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Trending sparkline placeholder shimmer */
+.trend-sparkline {
+  height: 32px;
+  background: linear-gradient(90deg, #f1f5f9 0%, #e0e7ff 50%, #f1f5f9 100%);
+  background-size: 200%;
+  animation: shimmer 2s infinite linear;
+  border-radius: 0.25rem;
+}
+
+/* Pulsing status dot */
+@keyframes status-ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+.status-dot-live {
+  position: relative;
+}
+.status-dot-live::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.3);
+  animation: status-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Login / Landing page dark overrides (since html root is now light)          */
+/* ─────────────────────────────────────────────────────────────────────────── */
+.sentinel-dark-page {
+  --background: #050812;
+  --foreground: #f8fafc;
+  background-color: #050812;
+  color: #f8fafc;
 }

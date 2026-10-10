@@ -17,7 +17,7 @@ sys.path.insert(0, str(root / "ml" / "signatures"))
 sys.path.insert(0, str(root / "backend"))
 
 from scapy_capture import capture_packets
-from zeek_parser import parse_conn_log_to_events
+from zeek_parser_archived import parse_conn_log_to_events
 
 # Step 1: Capture packets (loopback, bounded)
 print("=" * 60)

@@ -2,10 +2,14 @@
 
 import { useRef, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import dynamic from "next/dynamic";
-import { gsap } from "gsap";
 
-const NetworkHero = dynamic(() => import("@/components/home/NetworkHero"), { ssr: false });
+// ─── Lazy-load 2D canvas background ──────────────────────────────────────────
+const DashboardBackground = dynamic(
+  () => import("@/components/home/DashboardBackground"),
+  { ssr: false }
+);
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -19,7 +23,6 @@ function saveToken(token: string, username: string) {
 export default function LoginPage() {
   const router = useRouter();
   const cardRef = useRef<HTMLDivElement>(null);
-  const logoRef = useRef<HTMLDivElement>(null);
 
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
@@ -27,22 +30,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
-  // Entrance animation
-  useEffect(() => {
-    const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
-    tl.fromTo(logoRef.current, { y: -20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 })
-      .fromTo(cardRef.current,  { y: 40,  opacity: 0, scale: 0.97 }, { y: 0, opacity: 1, scale: 1, duration: 0.7 }, "-=0.3");
-  }, []);
+  const [shaking, setShaking] = useState(false);
+  const [exiting, setExiting] = useState(false);
 
   // Shake card on error
   useEffect(() => {
-    if (!error || !cardRef.current) return;
-    gsap.fromTo(
-      cardRef.current,
-      { x: -8 },
-      { x: 0, duration: 0.4, ease: "elastic.out(1, 0.4)" }
-    );
+    if (!error) return;
+    setShaking(true);
+    const timer = setTimeout(() => setShaking(false), 500);
+    return () => clearTimeout(timer);
   }, [error]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,8 +82,8 @@ export default function LoginPage() {
       } else {
         saveToken(data.access_token, data.username);
         // Slide out and navigate
-        await gsap.to(cardRef.current, { y: -20, opacity: 0, duration: 0.4, ease: "power3.in" });
-        router.push("/dashboard");
+        setExiting(true);
+        setTimeout(() => router.push("/dashboard"), 400);
       }
     } catch (err) {
       setError("Could not reach the backend. Is the server running?");
@@ -97,12 +93,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#050812] flex items-center justify-center overflow-hidden p-4">
+    <div className="sentinel-dark-page relative min-h-screen bg-[#050812] flex items-center justify-center overflow-hidden p-4">
 
-      {/* Background 3D network (muted) */}
-      <div className="absolute inset-0 z-0 opacity-40">
-        <NetworkHero />
-      </div>
+      {/* Background 2D particle network (muted) */}
+      <DashboardBackground />
 
       {/* Radial glow */}
       <div className="absolute inset-0 z-0 pointer-events-none">
@@ -114,7 +108,10 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md">
 
         {/* Logo */}
-        <div ref={logoRef} className="flex flex-col items-center mb-8">
+        <div
+          className="flex flex-col items-center mb-8
+            animate-[fadeSlideDown_0.6s_cubic-bezier(0.33,1,0.68,1)_both]"
+        >
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-violet-600
             flex items-center justify-center mb-4 shadow-2xl shadow-cyan-500/30">
             <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -130,8 +127,11 @@ export default function LoginPage() {
         {/* Card */}
         <div
           ref={cardRef}
-          className="rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-xl
-            shadow-2xl shadow-black/40 p-8"
+          className={`rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-xl
+            shadow-2xl shadow-black/40 p-8
+            animate-[fadeSlideUp_0.7s_0.2s_cubic-bezier(0.33,1,0.68,1)_both]
+            ${shaking ? "animate-[shakeX_0.4s_ease-out]" : ""}
+            ${exiting ? "transition-all duration-400 opacity-0 -translate-y-5" : ""}`}
         >
           {/* Mode tabs */}
           <div className="flex rounded-xl overflow-hidden border border-slate-700/60 mb-6 bg-slate-950/50">
@@ -247,9 +247,9 @@ export default function LoginPage() {
 
         {/* Back link */}
         <div className="text-center mt-6">
-          <a href="/" className="text-sm text-slate-600 hover:text-slate-400 transition-colors">
+          <Link href="/" className="text-sm text-slate-600 hover:text-slate-400 transition-colors">
             ← Back to homepage
-          </a>
+          </Link>
         </div>
       </div>
     </div>

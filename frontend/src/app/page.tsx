@@ -4,18 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 
-// ─── Lazy-load 3D canvas (avoids SSR issues with WebGL) ───────────────────────
-const NetworkHero = dynamic(() => import("@/components/home/NetworkHero"), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-transparent" />,
-});
-
-if (typeof window !== "undefined") {
-  gsap.registerPlugin(ScrollTrigger);
-}
+// ─── Lazy-load 2D canvas background (avoids SSR issues) ───────────────────────
+const DashboardBackground = dynamic(
+  () => import("@/components/home/DashboardBackground"),
+  { ssr: false }
+);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface StatItem { value: string; label: string; color: string }
@@ -55,26 +49,43 @@ const FEATURES: Feature[] = [
   },
 ];
 
-// ─── Animated Counter ─────────────────────────────────────────────────────────
-function StatCounter({ stat }: { stat: StatItem }) {
-  const ref = useRef<HTMLSpanElement>(null);
+// ─── Scroll-triggered fade-in hook (replaces GSAP ScrollTrigger) ──────────────
+function useScrollFadeIn(delay: number = 0) {
+  const ref = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (!ref.current) return;
-    gsap.fromTo(
-      ref.current,
-      { opacity: 0, y: 20 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.8,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ref.current, start: "top 85%" },
-      }
+    const el = ref.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setTimeout(() => {
+            el.style.opacity = "1";
+            el.style.transform = "translateY(0)";
+          }, delay);
+          observer.unobserve(el);
+        }
+      },
+      { threshold: 0.1 }
     );
-  }, []);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [delay]);
+
+  return ref;
+}
+
+// ─── Stat Counter ─────────────────────────────────────────────────────────────
+function StatCounter({ stat }: { stat: StatItem }) {
+  const ref = useScrollFadeIn();
   return (
     <div className="flex flex-col items-center gap-1">
-      <span ref={ref} className={`text-4xl md:text-5xl font-black tracking-tight ${stat.color}`}>
+      <span
+        ref={ref}
+        className={`text-4xl md:text-5xl font-black tracking-tight ${stat.color}`}
+        style={{ opacity: 0, transform: "translateY(20px)", transition: "opacity 0.8s cubic-bezier(0.33,1,0.68,1), transform 0.8s cubic-bezier(0.33,1,0.68,1)" }}
+      >
         {stat.value}
       </span>
       <span className="text-sm text-slate-400 font-medium uppercase tracking-widest">
@@ -99,26 +110,12 @@ const iconBgMap: Record<string, string> = {
 };
 
 function FeatureCard({ feature, idx }: { feature: Feature; idx: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    gsap.fromTo(
-      ref.current,
-      { opacity: 0, y: 40 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.7,
-        delay: idx * 0.12,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ref.current, start: "top 88%" },
-      }
-    );
-  }, [idx]);
+  const ref = useScrollFadeIn(idx * 120);
 
   return (
     <div
       ref={ref}
+      style={{ opacity: 0, transform: "translateY(40px)", transition: "opacity 0.7s cubic-bezier(0.33,1,0.68,1), transform 0.7s cubic-bezier(0.33,1,0.68,1)" }}
       className={`group relative rounded-2xl border bg-slate-900/50 backdrop-blur-sm p-6 flex flex-col gap-4
         transition-all duration-300 hover:shadow-xl hover:-translate-y-1
         ${accentMap[feature.accent]}`}
@@ -152,21 +149,25 @@ function TerminalWindow() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!ref.current) return;
-    const trigger = ScrollTrigger.create({
-      trigger: ref.current,
-      start: "top 80%",
-      onEnter: () => {
-        let i = 0;
-        const interval = setInterval(() => {
-          setVisibleLines((v) => v + 1);
-          i++;
-          if (i >= TERMINAL_LINES.length) clearInterval(interval);
-        }, 320);
+    const el = ref.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          let i = 0;
+          const interval = setInterval(() => {
+            setVisibleLines((v) => v + 1);
+            i++;
+            if (i >= TERMINAL_LINES.length) clearInterval(interval);
+          }, 320);
+          observer.unobserve(el);
+        }
       },
-      once: true,
-    });
-    return () => trigger.kill();
+      { threshold: 0.2 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   return (
@@ -198,33 +199,17 @@ function TerminalWindow() {
 
 // ─── Main Homepage ────────────────────────────────────────────────────────────
 export default function HomePage() {
-  const heroRef   = useRef<HTMLDivElement>(null);
-  const headRef   = useRef<HTMLHeadingElement>(null);
-  const subRef    = useRef<HTMLParagraphElement>(null);
-  const ctaRef    = useRef<HTMLDivElement>(null);
-  const navRef    = useRef<HTMLElement>(null);
-  const badgeRef  = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Hero entrance animation
-    const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
-    tl.fromTo(navRef.current, { y: -30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7 })
-      .fromTo(badgeRef.current, { scale: 0.8, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5 }, "-=0.3")
-      .fromTo(headRef.current, { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 0.9 }, "-=0.2")
-      .fromTo(subRef.current, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7 }, "-=0.5")
-      .fromTo(ctaRef.current, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 }, "-=0.4");
-
-    return () => { tl.kill(); ScrollTrigger.getAll().forEach((t) => t.kill()); };
-  }, []);
-
   return (
-    <div className="min-h-screen bg-[#050812] text-white overflow-x-hidden">
+    <div className="sentinel-dark-page min-h-screen bg-[#050812] text-white overflow-x-hidden">
+
+      {/* Animated 2D particle network background */}
+      <DashboardBackground />
 
       {/* ── Navbar ───────────────────────────────────────────────────────── */}
       <nav
-        ref={navRef}
         className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-12 py-4
-          bg-[#050812]/80 backdrop-blur-md border-b border-white/5"
+          bg-[#050812]/80 backdrop-blur-md border-b border-white/5
+          animate-[fadeSlideDown_0.7s_cubic-bezier(0.33,1,0.68,1)_both]"
       >
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
@@ -261,12 +246,7 @@ export default function HomePage() {
       </nav>
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section ref={heroRef} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
-
-        {/* 3D canvas background */}
-        <div className="absolute inset-0 z-0">
-          <NetworkHero />
-        </div>
+      <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
 
         {/* Radial glow */}
         <div className="absolute inset-0 z-0 pointer-events-none">
@@ -277,15 +257,16 @@ export default function HomePage() {
 
         {/* Hero text */}
         <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
-          <div ref={badgeRef} className="inline-flex items-center gap-2 px-3 py-1 mb-6
-            rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-xs font-semibold uppercase tracking-widest">
+          <div className="inline-flex items-center gap-2 px-3 py-1 mb-6
+            rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-xs font-semibold uppercase tracking-widest
+            animate-[fadeScaleIn_0.5s_0.4s_cubic-bezier(0.33,1,0.68,1)_both]">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
             Agentic AI — Threat Detection &amp; Response
           </div>
 
           <h1
-            ref={headRef}
-            className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] mb-6"
+            className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] mb-6
+              animate-[fadeSlideUp_0.9s_0.5s_cubic-bezier(0.33,1,0.68,1)_both]"
           >
             Stop Threats
             <br />
@@ -295,14 +276,15 @@ export default function HomePage() {
           </h1>
 
           <p
-            ref={subRef}
-            className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed"
+            className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed
+              animate-[fadeSlideUp_0.7s_0.7s_cubic-bezier(0.33,1,0.68,1)_both]"
           >
             SentinelAI autonomously triages every security alert with a multi-agent pipeline —
             ML detection, ATT&amp;CK mapping, and analyst-in-the-loop approval in under 2 seconds.
           </p>
 
-          <div ref={ctaRef} className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4
+            animate-[fadeSlideUp_0.6s_0.9s_cubic-bezier(0.33,1,0.68,1)_both]">
             <Link
               href="/login"
               id="hero-cta-primary"
@@ -451,7 +433,7 @@ export default function HomePage() {
           <span className="font-bold text-sm">Sentinel<span className="text-cyan-400">AI</span></span>
         </div>
         <p className="text-xs text-slate-600">
-          Agentic AI Alert Triage &amp; Response · Built with FastAPI, Next.js, React Three Fiber
+          Agentic AI Alert Triage &amp; Response · Built with FastAPI &amp; Next.js
         </p>
       </footer>
     </div>
