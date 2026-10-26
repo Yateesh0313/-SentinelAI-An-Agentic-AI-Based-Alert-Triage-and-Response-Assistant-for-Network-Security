@@ -47,10 +47,14 @@ def setup_models():
     _load_artifacts()
 
 
+from auth import create_access_token
+
+
 @pytest.fixture
 def client():
-    """FastAPI test client."""
-    return TestClient(app)
+    """FastAPI test client with analyst authentication."""
+    token = create_access_token({"sub": "test_analyst", "role": "analyst"})
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
 
 # ---------------------------------------------------------------------------

@@ -88,8 +88,10 @@ def test_full_pipeline_event_lifecycle():
         "dst_host_srv_rerror_rate": 1.0,
     }
 
+    headers = get_token("lead_analyst")
+
     # 1. Step 1: Detect
-    detect_resp = client.post("/detect", json=sample_event)
+    detect_resp = client.post("/detect", json=sample_event, headers=headers)
     assert detect_resp.status_code == 200, f"Detect failed: {detect_resp.text}"
     detect_data = detect_resp.json()
     assert detect_data["prediction"] == "anomaly"
@@ -135,7 +137,7 @@ def test_full_pipeline_event_lifecycle():
 
     with patch("pipeline.run_pipeline", return_value=mock_agent_result):
         with patch.object(db, "insert_event", side_effect=mock_insert_event):
-            triage_resp = client.post("/triage", json=sample_event)
+            triage_resp = client.post("/triage", json=sample_event, headers=headers)
             assert triage_resp.status_code == 200, f"Triage failed: {triage_resp.text}"
             triage_data = triage_resp.json()
             test_event_id = triage_data["event_id"]
@@ -146,7 +148,6 @@ def test_full_pipeline_event_lifecycle():
             assert "ml_confidence" in triage_data["risk_signals"]
 
     # 3. Step 3: SOC Analyst Approval
-    headers = get_token("lead_analyst")
     with patch.object(db, "get_event", side_effect=mock_get_event):
         with patch.object(db, "approve_event", side_effect=mock_approve_event):
             with patch.object(main, "_broadcast", AsyncMock()):
@@ -159,7 +160,7 @@ def test_full_pipeline_event_lifecycle():
 
     # 4. Step 4: Verify complete stored document schema
     with patch.object(db, "get_event", side_effect=mock_get_event):
-        get_resp = client.get(f"/events/{test_event_id}")
+        get_resp = client.get(f"/events/{test_event_id}", headers=headers)
         assert get_resp.status_code == 200
         final_doc = get_resp.json()["data"]
 

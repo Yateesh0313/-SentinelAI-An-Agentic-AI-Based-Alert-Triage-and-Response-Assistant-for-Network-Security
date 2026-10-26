@@ -160,30 +160,35 @@ def test_csv_exporter_service(tmp_path: Path):
 # Test 4: FastAPI endpoints
 # ---------------------------------------------------------------------------
 
+from auth import create_access_token
+
+
 def test_fastapi_export_endpoints():
     """Verify FastAPI /logs/export/csv and list endpoints."""
     client = TestClient(main.app)
+    token = create_access_token({"sub": "test_admin", "role": "admin"})
+    headers = {"Authorization": f"Bearer {token}"}
 
     # 1. Export Suricata CSV
-    res_suri = client.get("/logs/export/csv/suricata")
+    res_suri = client.get("/logs/export/csv/suricata", headers=headers)
     assert res_suri.status_code == 200
     assert "text/csv" in res_suri.headers["content-type"]
     assert "attachment" in res_suri.headers["content-disposition"]
     assert "suricata_alerts_" in res_suri.headers["content-disposition"]
 
     # 2. Export Honeypot CSV
-    res_hp = client.get("/logs/export/csv/honeypot")
+    res_hp = client.get("/logs/export/csv/honeypot", headers=headers)
     assert res_hp.status_code == 200
     assert "text/csv" in res_hp.headers["content-type"]
     assert "honeypot_events_" in res_hp.headers["content-disposition"]
 
     # 3. Alias /logs/download-csv
-    res_alias = client.get("/logs/download-csv?source=suricata")
+    res_alias = client.get("/logs/download-csv?source=suricata", headers=headers)
     assert res_alias.status_code == 200
     assert "text/csv" in res_alias.headers["content-type"]
 
     # 4. List CSVs
-    res_list = client.get("/logs/csv/list")
+    res_list = client.get("/logs/csv/list", headers=headers)
     assert res_list.status_code == 200
     data = res_list.json()
     assert "count" in data
@@ -191,5 +196,5 @@ def test_fastapi_export_endpoints():
     assert data["count"] > 0
 
     # 5. Invalid source
-    res_err = client.get("/logs/export/csv/invalid_source")
+    res_err = client.get("/logs/export/csv/invalid_source", headers=headers)
     assert res_err.status_code == 400

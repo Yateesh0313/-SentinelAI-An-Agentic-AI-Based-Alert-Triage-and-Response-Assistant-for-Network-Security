@@ -37,7 +37,16 @@ from pathlib import Path
 load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv()
 
-_JWT_SECRET: str = os.getenv("JWT_SECRET") or "sentinelai-ci-testing-jwt-secret-key-32-chars-minimum"
+_JWT_SECRET: str = os.getenv("JWT_SECRET", "")
+if not _JWT_SECRET:
+    import warnings
+    warnings.warn(
+        "JWT_SECRET is not set in backend/.env. Using an insecure default for "
+        "local development ONLY. Set JWT_SECRET to a random 64+ character hex "
+        "string before any real deployment.",
+        stacklevel=2,
+    )
+    _JWT_SECRET = "sentinelai-insecure-dev-only-default-jwt-secret-do-not-deploy"
 _JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 _JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
 
@@ -89,6 +98,13 @@ def decode_token(token: str) -> dict[str, Any]:
 # FastAPI dependency
 # ---------------------------------------------------------------------------
 
+# Role hierarchy — higher index = more privilege
+ROLE_HIERARCHY: dict[str, int] = {
+    "viewer": 0,
+    "analyst": 1,
+    "admin": 2,
+}
+
 
 async def get_current_user(token: str = Depends(_oauth2_scheme)) -> dict:
     """FastAPI dependency — inject into protected endpoints.
@@ -103,6 +119,55 @@ async def get_current_user(token: str = Depends(_oauth2_scheme)) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token missing subject claim.",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {"username": username, "role": payload.get("role", "analyst")}
+
+
+def require_role(minimum_role: str):
+    """Factory that returns a FastAPI dependency enforcing a minimum role.
+
+    Usage::
+
+        @app.post("/admin/thing")
+        async def admin_thing(user: dict = Depends(require_role("admin"))):
+            ...
+
+    Role hierarchy: viewer < analyst < admin.
+    Returns HTTP 403 if the user's role is below *minimum_role*.
+    """
+    min_level = ROLE_HIERARCHY.get(minimum_role, 0)
+
+    async def _check(current_user: dict = Depends(get_current_user)) -> dict:
+        user_level = ROLE_HIERARCHY.get(current_user.get("role", ""), 0)
+        if user_level < min_level:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{current_user.get('role')}' is not sufficient. "
+                       f"Minimum required: '{minimum_role}'.",
+            )
+        return current_user
+
+    return _check
+
+
+def validate_ws_token(token: str | None) -> dict:
+    """Validate a JWT token for WebSocket connections.
+
+    WebSockets can't use the standard OAuth2PasswordBearer flow, so
+    the client passes the token as a query parameter: ``ws://host/ws?token=<jwt>``.
+    Returns the decoded user dict or raises HTTP 401/403.
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="WebSocket connection requires a token query parameter.",
+        )
+    payload = decode_token(token)  # raises HTTP 401 on invalid token
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing subject claim.",
         )
     return {"username": username, "role": payload.get("role", "analyst")}
 

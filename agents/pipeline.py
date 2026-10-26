@@ -375,3 +375,131 @@ def run_pipeline(raw_event: dict) -> dict:
         "recommended_action": result.get("response_action", "flag_for_review"),
         "error": result.get("error", ""),
     }
+
+
+# ---------------------------------------------------------------------------
+# Heuristic (rule-based) triage fallback -- used when LLM API is unavailable
+# ---------------------------------------------------------------------------
+
+def _safe_num(event: dict, key: str, default: float = 0.0) -> float:
+    """Get a numeric value from *event*, returning *default* on failure."""
+    try:
+        return float(event.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def heuristic_triage(raw_event: dict) -> dict:
+    """Deterministic, rule-based triage that requires NO LLM call.
+
+    Inspects NSL-KDD features and applies threshold heuristics to
+    produce a severity assessment and recommended action.  This is the
+    fallback used when the Groq API is unreachable or returns errors.
+
+    Returns the same dict shape as run_pipeline():
+        triage, severity, severity_justification, recommended_action,
+        attack_techniques
+    """
+    # --- Extract key signals ---
+    failed_logins   = _safe_num(raw_event, "num_failed_logins")
+    root_shell      = _safe_num(raw_event, "root_shell")
+    su_attempted    = _safe_num(raw_event, "su_attempted")
+    num_compromised = _safe_num(raw_event, "num_compromised")
+    serror_rate     = _safe_num(raw_event, "serror_rate")
+    rerror_rate     = _safe_num(raw_event, "rerror_rate")
+    src_bytes       = _safe_num(raw_event, "src_bytes")
+    dst_bytes       = _safe_num(raw_event, "dst_bytes")
+    count           = _safe_num(raw_event, "count")
+    diff_srv_rate   = _safe_num(raw_event, "diff_srv_rate")
+    same_srv_rate   = _safe_num(raw_event, "same_srv_rate")
+    logged_in       = _safe_num(raw_event, "logged_in")
+    service         = str(raw_event.get("service", "other"))
+    protocol        = str(raw_event.get("protocol_type", "tcp"))
+
+    # --- Deterministic ATT&CK mapping (same as LLM path) ---
+    techniques = map_attack_techniques(raw_event)
+
+    # --- Classify severity by rule priority ---
+    severity = "Low"
+    justification_parts: list[str] = []
+    action = "no_action"
+
+    # CRITICAL: root shell obtained or privilege escalation
+    if root_shell >= 1 or su_attempted >= 1:
+        severity = "Critical"
+        justification_parts.append("Root shell or privilege escalation detected.")
+        action = "isolate_host"
+
+    # CRITICAL: mass brute-force (many failed logins)
+    elif failed_logins >= 5:
+        severity = "Critical"
+        justification_parts.append(f"{int(failed_logins)} failed login attempts indicate brute-force attack.")
+        action = "block_ip"
+
+    # HIGH: host compromise indicators
+    elif num_compromised >= 1 and logged_in >= 1:
+        severity = "High"
+        justification_parts.append("Logged-in session with compromised host indicators.")
+        action = "isolate_host"
+
+    # HIGH: SYN flood / connection-reset storm
+    elif serror_rate > 0.70 and count > 50:
+        severity = "High"
+        justification_parts.append(f"SYN-error rate {serror_rate:.0%} across {int(count)} connections suggests denial-of-service.")
+        action = "block_ip"
+
+    # HIGH: large data exfiltration
+    elif src_bytes > 10_000 and dst_bytes < 1_000 and src_bytes > 10 * max(dst_bytes, 1):
+        severity = "High"
+        justification_parts.append(f"Large outbound transfer ({int(src_bytes)} bytes sent, {int(dst_bytes)} received) suggests data exfiltration.")
+        action = "block_ip"
+
+    # MEDIUM: port scanning
+    elif diff_srv_rate > 0.50 and count > 10:
+        severity = "Medium"
+        justification_parts.append("High service diversity with many short connections suggests port scanning.")
+        action = "flag_for_review"
+
+    # MEDIUM: moderate brute-force
+    elif failed_logins >= 3:
+        severity = "Medium"
+        justification_parts.append(f"{int(failed_logins)} failed logins suggest credential-guessing.")
+        action = "flag_for_review"
+
+    # MEDIUM: high connection-reset rate
+    elif rerror_rate > 0.70 and count > 30:
+        severity = "Medium"
+        justification_parts.append("High connection-reset rate indicates network abuse.")
+        action = "flag_for_review"
+
+    # MEDIUM: C2-like steady beacon pattern
+    elif count > 200 and same_srv_rate > 0.85:
+        severity = "Medium"
+        justification_parts.append("Rapid repeated connections to one service suggest command-and-control communication.")
+        action = "flag_for_review"
+
+    # LOW: generic anomaly
+    else:
+        severity = "Low"
+        justification_parts.append("Anomalous traffic pattern detected; no high-confidence indicator matched.")
+        action = "flag_for_review"
+
+    # --- Build human-readable triage explanation ---
+    justification = " ".join(justification_parts)
+
+    triage_lines = [
+        f"Anomalous {protocol.upper()} traffic detected targeting {service} service.",
+        justification,
+        f"Recommended action: {action.replace('_', ' ')}.",
+    ]
+    if techniques:
+        tags = ", ".join(f"{t['id']} — {t['name']}" for t in techniques)
+        triage_lines.append(f"[Ref: {tags}]")
+
+    return {
+        "triage": " ".join(triage_lines[:3]) + ("\n" + triage_lines[3] if len(triage_lines) > 3 else ""),
+        "severity": severity,
+        "severity_justification": f"Heuristic fallback: {justification}",
+        "recommended_action": action,
+        "attack_techniques": techniques,
+    }

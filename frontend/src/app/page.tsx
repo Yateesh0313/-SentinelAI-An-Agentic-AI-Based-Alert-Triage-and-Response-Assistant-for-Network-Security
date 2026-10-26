@@ -1,440 +1,460 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import Image from "next/image";
+import { motion } from "framer-motion";
+import {
+  Shield,
+  Brain,
+  Radar,
+  Network,
+  ArrowRight,
+  CheckCircle2,
+  Zap,
+  Eye,
+  Lock,
+  ChevronDown,
+} from "lucide-react";
 
-// ─── Lazy-load 2D canvas background (avoids SSR issues) ───────────────────────
-const DashboardBackground = dynamic(
-  () => import("@/components/home/DashboardBackground"),
-  { ssr: false }
+// ─── Lazy-load 3D Globe ────────────────────────────────────────────────────────
+const GlobeScene = dynamic(
+  () => import("@/components/three/GlobeScene"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-50 to-cyan-50 animate-pulse" />
+      </div>
+    ),
+  }
 );
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface StatItem { value: string; label: string; color: string }
-interface Feature { icon: string; title: string; desc: string; accent: string }
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface StatItem { value: string; label: string; suffix?: string }
+interface Feature { icon: React.ReactNode; title: string; desc: string; color: string }
 
+// ─── Data ──────────────────────────────────────────────────────────────────────
 const STATS: StatItem[] = [
-  { value: "< 2s",  label: "Avg. Triage Time",    color: "text-cyan-400" },
-  { value: "99.1%", label: "Detection Accuracy",  color: "text-violet-400" },
-  { value: "24/7",  label: "Autonomous Coverage", color: "text-cyan-400" },
-  { value: "0",     label: "False Positives*",    color: "text-emerald-400" },
+  { value: "< 2", label: "Avg. Triage Time", suffix: "sec" },
+  { value: "99.1", label: "Detection Accuracy", suffix: "%" },
+  { value: "24/7", label: "Autonomous Coverage" },
+  { value: "3", label: "AI Agent Pipeline", suffix: "nodes" },
 ];
 
 const FEATURES: Feature[] = [
   {
-    icon: "/images/feature-shield.svg",
-    title: "Autonomous Triage",
-    desc: "AI agents classify, score, and prioritize every alert in real-time — no analyst fatigue, no alert blindness.",
-    accent: "cyan",
-  },
-  {
-    icon: "/images/feature-radar.svg",
+    icon: <Radar className="w-6 h-6" />,
     title: "Live Threat Detection",
-    desc: "KDDCup99 ML model + YARA signatures catch intrusions the moment they appear across all network layers.",
-    accent: "red",
+    desc: "ML model + YARA signatures detect intrusions the moment packets arrive. Suricata IDS and honeypot sensors feed real alerts into the pipeline.",
+    color: "text-red-500 bg-red-50 border-red-100",
   },
   {
-    icon: "/images/feature-brain.svg",
-    title: "ATT&CK Mapping",
-    desc: "Every event is automatically mapped to MITRE ATT&CK techniques and enriched with geolocation and abuse data.",
-    accent: "violet",
+    icon: <Brain className="w-6 h-6" />,
+    title: "AI-Powered Triage",
+    desc: "Three LLM agents classify severity, map to MITRE ATT&CK techniques, and recommend response actions — all in under 2 seconds.",
+    color: "text-indigo-500 bg-indigo-50 border-indigo-100",
   },
   {
-    icon: "/images/feature-network.svg",
-    title: "Honeypot Intelligence",
-    desc: "Decoy listeners capture real adversarial probes and feed them into the triage pipeline automatically.",
-    accent: "emerald",
+    icon: <Eye className="w-6 h-6" />,
+    title: "Plain-English Explanations",
+    desc: "Every alert comes with What happened, Why it matters, and What we recommend — written for humans, not just security engineers.",
+    color: "text-cyan-500 bg-cyan-50 border-cyan-100",
+  },
+  {
+    icon: <Lock className="w-6 h-6" />,
+    title: "Human-in-the-Loop Approval",
+    desc: "No action executes without analyst approval. Approve, reject, investigate, or mark false-positive with full audit trail.",
+    color: "text-emerald-500 bg-emerald-50 border-emerald-100",
   },
 ];
 
-// ─── Scroll-triggered fade-in hook (replaces GSAP ScrollTrigger) ──────────────
-function useScrollFadeIn(delay: number = 0) {
-  const ref = useRef<HTMLDivElement>(null);
+const PIPELINE_STEPS = [
+  {
+    step: "01",
+    title: "Capture",
+    desc: "Live network traffic from Suricata IDS, honeypot listeners, and Scapy packet capture flows into the detection engine.",
+    color: "border-cyan-200 bg-cyan-50/50",
+    textColor: "text-cyan-600",
+  },
+  {
+    step: "02",
+    title: "Detect",
+    desc: "XGBoost ML model classifies each event. YARA rules scan for known-bad patterns. Both signals run in parallel.",
+    color: "border-indigo-200 bg-indigo-50/50",
+    textColor: "text-indigo-600",
+  },
+  {
+    step: "03",
+    title: "Triage",
+    desc: "LangGraph multi-agent pipeline: Triage → Severity → Response. Each node produces structured JSON with ATT&CK mappings.",
+    color: "border-violet-200 bg-violet-50/50",
+    textColor: "text-violet-600",
+  },
+  {
+    step: "04",
+    title: "Respond",
+    desc: "Human analyst reviews the recommendation on the dashboard. One click to approve, reject, or investigate further.",
+    color: "border-emerald-200 bg-emerald-50/50",
+    textColor: "text-emerald-600",
+  },
+];
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+// ─── Animation variants ───────────────────────────────────────────────────────
+const fadeUp = {
+  hidden: { opacity: 0, y: 30 },
+  visible: (i: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.1, duration: 0.6, ease: [0.33, 1, 0.68, 1] as [number, number, number, number] },
+  }),
+};
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setTimeout(() => {
-            el.style.opacity = "1";
-            el.style.transform = "translateY(0)";
-          }, delay);
-          observer.unobserve(el);
-        }
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [delay]);
+const stagger = {
+  visible: { transition: { staggerChildren: 0.12 } },
+};
 
-  return ref;
-}
-
-// ─── Stat Counter ─────────────────────────────────────────────────────────────
-function StatCounter({ stat }: { stat: StatItem }) {
-  const ref = useScrollFadeIn();
+// ─── Stat Counter with count-up ───────────────────────────────────────────────
+function StatCounter({ stat, index }: { stat: StatItem; index: number }) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <span
-        ref={ref}
-        className={`text-4xl md:text-5xl font-black tracking-tight ${stat.color}`}
-        style={{ opacity: 0, transform: "translateY(20px)", transition: "opacity 0.8s cubic-bezier(0.33,1,0.68,1), transform 0.8s cubic-bezier(0.33,1,0.68,1)" }}
-      >
-        {stat.value}
-      </span>
-      <span className="text-sm text-slate-400 font-medium uppercase tracking-widest">
+    <motion.div
+      variants={fadeUp}
+      custom={index}
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, margin: "-50px" }}
+      className="flex flex-col items-center gap-1 p-6"
+    >
+      <div className="flex items-baseline gap-1">
+        <span className="text-4xl md:text-5xl font-black tracking-tight text-foreground">
+          {stat.value}
+        </span>
+        {stat.suffix && (
+          <span className="text-lg font-semibold text-muted-foreground">
+            {stat.suffix}
+          </span>
+        )}
+      </div>
+      <span className="text-sm text-muted-foreground font-medium uppercase tracking-widest mt-1">
         {stat.label}
       </span>
-    </div>
+    </motion.div>
   );
 }
 
 // ─── Feature Card ─────────────────────────────────────────────────────────────
-const accentMap: Record<string, string> = {
-  cyan:    "border-cyan-500/30 hover:border-cyan-500/70 hover:shadow-cyan-500/10",
-  red:     "border-red-500/30  hover:border-red-500/70  hover:shadow-red-500/10",
-  violet:  "border-violet-500/30 hover:border-violet-500/70 hover:shadow-violet-500/10",
-  emerald: "border-emerald-500/30 hover:border-emerald-500/70 hover:shadow-emerald-500/10",
-};
-const iconBgMap: Record<string, string> = {
-  cyan:    "bg-cyan-500/10",
-  red:     "bg-red-500/10",
-  violet:  "bg-violet-500/10",
-  emerald: "bg-emerald-500/10",
-};
-
-function FeatureCard({ feature, idx }: { feature: Feature; idx: number }) {
-  const ref = useScrollFadeIn(idx * 120);
+function FeatureCard({ feature, index }: { feature: Feature; index: number }) {
+  const colorParts = feature.color.split(" ");
 
   return (
-    <div
-      ref={ref}
-      style={{ opacity: 0, transform: "translateY(40px)", transition: "opacity 0.7s cubic-bezier(0.33,1,0.68,1), transform 0.7s cubic-bezier(0.33,1,0.68,1)" }}
-      className={`group relative rounded-2xl border bg-slate-900/50 backdrop-blur-sm p-6 flex flex-col gap-4
-        transition-all duration-300 hover:shadow-xl hover:-translate-y-1
-        ${accentMap[feature.accent]}`}
+    <motion.div
+      variants={fadeUp}
+      custom={index}
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, margin: "-50px" }}
+      className="group relative rounded-2xl border border-border bg-white p-6 flex flex-col gap-4
+        shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
     >
-      {/* Subtle gradient shine on hover */}
-      <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500
-        bg-gradient-to-br from-white/[0.03] to-transparent pointer-events-none" />
-
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${iconBgMap[feature.accent]}`}>
-        <Image src={feature.icon} alt={feature.title} width={28} height={28} className="opacity-90" />
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${colorParts.slice(1).join(" ")}`}>
+        <div className={colorParts[0]}>{feature.icon}</div>
       </div>
-      <h3 className="text-lg font-bold text-white">{feature.title}</h3>
-      <p className="text-sm text-slate-400 leading-relaxed">{feature.desc}</p>
-    </div>
+      <h3 className="text-lg font-bold text-foreground">{feature.title}</h3>
+      <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
+    </motion.div>
   );
 }
 
-// ─── Typed terminal animation ─────────────────────────────────────────────────
-const TERMINAL_LINES = [
-  { text: "$ sentinel --monitor --live", color: "text-cyan-400" },
-  { text: "[INFO] Connecting to threat pipeline...", color: "text-slate-400" },
-  { text: "[ALERT] Intrusion detected: 185.220.101.47", color: "text-red-400" },
-  { text: "[ML] Prediction: anomaly (confidence: 97.3%)", color: "text-yellow-400" },
-  { text: "[ATT&CK] T1046 - Network Service Scanning", color: "text-violet-400" },
-  { text: "[RESPONSE] Action: block_ip + alert_analyst", color: "text-emerald-400" },
-  { text: "[DONE] Event triaged in 1.8s", color: "text-cyan-400" },
-];
-
-function TerminalWindow() {
-  const [visibleLines, setVisibleLines] = useState(0);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          let i = 0;
-          const interval = setInterval(() => {
-            setVisibleLines((v) => v + 1);
-            i++;
-            if (i >= TERMINAL_LINES.length) clearInterval(interval);
-          }, 320);
-          observer.unobserve(el);
-        }
-      },
-      { threshold: 0.2 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className="rounded-2xl border border-slate-700/60 bg-slate-950/80 backdrop-blur overflow-hidden shadow-2xl shadow-black/40"
-    >
-      {/* Title bar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/60 bg-slate-900/60">
-        <span className="w-3 h-3 rounded-full bg-red-500/80" />
-        <span className="w-3 h-3 rounded-full bg-yellow-500/80" />
-        <span className="w-3 h-3 rounded-full bg-green-500/80" />
-        <span className="ml-3 text-xs text-slate-500 font-mono">sentinel-ai — triage-pipeline</span>
-      </div>
-      {/* Content */}
-      <div className="p-5 font-mono text-sm space-y-1.5 min-h-[200px]">
-        {TERMINAL_LINES.slice(0, visibleLines).map((line, i) => (
-          <div key={i} className={`${line.color} leading-relaxed`}>
-            {line.text}
-            {i === visibleLines - 1 && (
-              <span className="ml-0.5 inline-block w-2 h-4 bg-cyan-400 animate-pulse align-text-bottom" />
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Homepage ────────────────────────────────────────────────────────────
+// ─── Main Landing Page ────────────────────────────────────────────────────────
 export default function HomePage() {
   return (
-    <div className="sentinel-dark-page min-h-screen bg-[#050812] text-white overflow-x-hidden">
-
-      {/* Animated 2D particle network background */}
-      <DashboardBackground />
+    <div className="min-h-screen gradient-mesh-bg overflow-x-hidden">
 
       {/* ── Navbar ───────────────────────────────────────────────────────── */}
-      <nav
+      <motion.nav
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
         className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-12 py-4
-          bg-[#050812]/80 backdrop-blur-md border-b border-white/5
-          animate-[fadeSlideDown_0.7s_cubic-bezier(0.33,1,0.68,1)_both]"
+          bg-white/70 backdrop-blur-xl border-b border-border/50"
       >
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd"/>
-            </svg>
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <Shield className="w-4 h-4 text-white" />
           </div>
-          <span className="font-black text-lg tracking-tight">
-            Sentinel<span className="text-cyan-400">AI</span>
+          <span className="font-black text-lg tracking-tight text-foreground">
+            Sentinel<span className="gradient-text">AI</span>
           </span>
         </div>
-        <div className="hidden md:flex items-center gap-8 text-sm text-slate-400 font-medium">
-          <a href="#features" className="hover:text-white transition-colors">Features</a>
-          <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
-          <a href="#stats" className="hover:text-white transition-colors">Metrics</a>
+
+        <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground font-medium">
+          <a href="#features" className="hover:text-foreground transition-colors">Features</a>
+          <a href="#pipeline" className="hover:text-foreground transition-colors">Architecture</a>
+          <a href="#stats" className="hover:text-foreground transition-colors">Metrics</a>
         </div>
+
         <div className="flex items-center gap-3">
           <Link
             href="/login"
-            className="px-4 py-1.5 text-sm font-semibold text-slate-300 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
           >
             Sign In
           </Link>
           <Link
             href="/login"
             id="hero-cta-nav"
-            className="px-4 py-1.5 text-sm font-semibold rounded-lg
-              bg-gradient-to-r from-cyan-500 to-violet-600 text-white
-              hover:shadow-lg hover:shadow-cyan-500/25 transition-all duration-200"
+            className="btn-gradient px-5 py-2 text-sm font-bold rounded-xl"
           >
             Launch Dashboard
           </Link>
         </div>
-      </nav>
+      </motion.nav>
 
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
+      {/* ── Hero Section with 3D Globe ───────────────────────────────────── */}
+      <section className="relative min-h-screen flex items-center overflow-hidden pt-20">
+        <div className="max-w-7xl mx-auto px-6 w-full grid lg:grid-cols-2 gap-12 items-center">
+          {/* Left: Text content */}
+          <div className="relative z-10">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="inline-flex items-center gap-2 px-4 py-1.5 mb-6
+                rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600
+                text-xs font-semibold uppercase tracking-widest"
+            >
+              <Zap className="w-3 h-3" />
+              Agentic AI — Threat Detection & Response
+            </motion.div>
 
-        {/* Radial glow */}
-        <div className="absolute inset-0 z-0 pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-            w-[700px] h-[500px] rounded-full
-            bg-gradient-radial from-cyan-500/10 via-violet-600/5 to-transparent blur-3xl" />
-        </div>
+            <motion.h1
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35, duration: 0.7, ease: [0.33, 1, 0.68, 1] }}
+              className="text-5xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] mb-6 text-foreground"
+            >
+              Stop Threats
+              <br />
+              <span className="gradient-text">Before They Start</span>
+            </motion.h1>
 
-        {/* Hero text */}
-        <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1 mb-6
-            rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-xs font-semibold uppercase tracking-widest
-            animate-[fadeScaleIn_0.5s_0.4s_cubic-bezier(0.33,1,0.68,1)_both]">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-            Agentic AI — Threat Detection &amp; Response
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, duration: 0.6 }}
+              className="text-lg md:text-xl text-muted-foreground max-w-lg mb-10 leading-relaxed"
+            >
+              SentinelAI autonomously triages every security alert with a
+              multi-agent pipeline — ML detection, ATT&CK mapping, and
+              analyst-in-the-loop approval in under 2 seconds.
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.65, duration: 0.5 }}
+              className="flex flex-col sm:flex-row items-start gap-4"
+            >
+              <Link
+                href="/login"
+                id="hero-cta-primary"
+                className="group flex items-center gap-2 btn-gradient px-8 py-3.5 rounded-xl font-bold text-base"
+              >
+                Launch Dashboard
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+              <a
+                href="#features"
+                className="flex items-center gap-2 px-8 py-3.5 rounded-xl font-bold text-base
+                  border border-border text-foreground bg-white/60 backdrop-blur
+                  hover:bg-white hover:shadow-md transition-all duration-200"
+              >
+                Explore Features
+                <ChevronDown className="w-4 h-4" />
+              </a>
+            </motion.div>
           </div>
 
-          <h1
-            className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] mb-6
-              animate-[fadeSlideUp_0.9s_0.5s_cubic-bezier(0.33,1,0.68,1)_both]"
+          {/* Right: 3D Globe */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.4, duration: 0.8, ease: [0.33, 1, 0.68, 1] }}
+            className="relative h-[400px] md:h-[500px] lg:h-[560px]"
           >
-            Stop Threats
-            <br />
-            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-500 bg-clip-text text-transparent">
-              Before They Start
-            </span>
-          </h1>
-
-          <p
-            className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed
-              animate-[fadeSlideUp_0.7s_0.7s_cubic-bezier(0.33,1,0.68,1)_both]"
-          >
-            SentinelAI autonomously triages every security alert with a multi-agent pipeline —
-            ML detection, ATT&amp;CK mapping, and analyst-in-the-loop approval in under 2 seconds.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4
-            animate-[fadeSlideUp_0.6s_0.9s_cubic-bezier(0.33,1,0.68,1)_both]">
-            <Link
-              href="/login"
-              id="hero-cta-primary"
-              className="group flex items-center gap-2 px-8 py-3.5 rounded-xl font-bold text-base
-                bg-gradient-to-r from-cyan-500 to-violet-600 text-white
-                shadow-lg shadow-cyan-500/20
-                hover:shadow-cyan-500/40 hover:scale-[1.03]
-                transition-all duration-200"
+            <Suspense
+              fallback={
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-50 to-cyan-50 animate-pulse" />
+                </div>
+              }
             >
-              Launch Dashboard
-              <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-            </Link>
-            <a
-              href="#features"
-              className="flex items-center gap-2 px-8 py-3.5 rounded-xl font-bold text-base
-                border border-slate-600/60 text-slate-300 bg-slate-900/40 backdrop-blur
-                hover:border-slate-400/60 hover:text-white hover:bg-slate-800/60
-                transition-all duration-200"
-            >
-              Explore Features
-            </a>
-          </div>
-        </div>
+              <GlobeScene className="w-full h-full" />
+            </Suspense>
 
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2 opacity-50">
-          <span className="text-xs text-slate-500 uppercase tracking-widest">Scroll</span>
-          <div className="w-px h-10 bg-gradient-to-b from-slate-500 to-transparent animate-pulse" />
+            {/* Floating stat badges around globe */}
+            <div className="absolute top-8 left-4 glass-card rounded-xl px-4 py-2.5 animate-[float_4s_ease-in-out_infinite]">
+              <div className="text-xs font-bold text-red-500 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500 status-dot-live" />
+                Critical Alert
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">T1046 — Network Scan</div>
+            </div>
+
+            <div className="absolute bottom-12 right-4 glass-card rounded-xl px-4 py-2.5 animate-[float_5s_ease-in-out_infinite_0.5s]">
+              <div className="text-xs font-bold text-emerald-500 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Threat Blocked
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">Response time: 1.8s</div>
+            </div>
+          </motion.div>
         </div>
       </section>
 
-      {/* ── Stats ─────────────────────────────────────────────────────────── */}
-      <section id="stats" className="py-20 border-y border-white/5 bg-slate-900/30">
-        <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-10">
-          {STATS.map((s) => <StatCounter key={s.label} stat={s} />)}
-        </div>
-        <p className="text-center text-xs text-slate-600 mt-6">*On KDDTest+ benchmark with current model config</p>
+      {/* ── Stats Bar ──────────────────────────────────────────────────── */}
+      <section id="stats" className="py-16 border-y border-border/50 bg-white/40 backdrop-blur-sm">
+        <motion.div
+          variants={stagger}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true }}
+          className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-6"
+        >
+          {STATS.map((s, i) => <StatCounter key={s.label} stat={s} index={i} />)}
+        </motion.div>
+        <p className="text-center text-xs text-muted-foreground mt-4">
+          *Benchmarked on KDDTest+ dataset with current model configuration
+        </p>
       </section>
 
-      {/* ── Features ─────────────────────────────────────────────────────── */}
+      {/* ── Features Grid ──────────────────────────────────────────────── */}
       <section id="features" className="py-24 px-6">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="inline-block px-3 py-1 mb-4 rounded-full border border-violet-500/30
-              bg-violet-500/10 text-violet-400 text-xs font-semibold uppercase tracking-widest">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-16"
+          >
+            <div className="inline-block px-4 py-1.5 mb-4 rounded-full border border-violet-200
+              bg-violet-50 text-violet-600 text-xs font-semibold uppercase tracking-widest">
               Capabilities
             </div>
-            <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4">
+            <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4 text-foreground">
               Everything you need to{" "}
-              <span className="bg-gradient-to-r from-cyan-400 to-violet-500 bg-clip-text text-transparent">
-                stay ahead
-              </span>
+              <span className="gradient-text">stay ahead</span>
             </h2>
-            <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
               A fully agentic pipeline — from raw packet to analyst decision — with no manual configuration.
             </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {FEATURES.map((f, i) => <FeatureCard key={f.title} feature={f} idx={i} />)}
-          </div>
+          </motion.div>
+
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5"
+          >
+            {FEATURES.map((f, i) => <FeatureCard key={f.title} feature={f} index={i} />)}
+          </motion.div>
         </div>
       </section>
 
-      {/* ── How It Works ─────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="py-24 px-6 bg-slate-900/30">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-16 items-center">
-          <div>
-            <div className="inline-block px-3 py-1 mb-4 rounded-full border border-cyan-500/30
-              bg-cyan-500/10 text-cyan-400 text-xs font-semibold uppercase tracking-widest">
-              How It Works
+      {/* ── Architecture Pipeline ──────────────────────────────────────── */}
+      <section id="pipeline" className="py-24 px-6 bg-white/30 backdrop-blur-sm border-y border-border/50">
+        <div className="max-w-6xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-16"
+          >
+            <div className="inline-block px-4 py-1.5 mb-4 rounded-full border border-cyan-200
+              bg-cyan-50 text-cyan-600 text-xs font-semibold uppercase tracking-widest">
+              Architecture
             </div>
-            <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-6">
+            <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4 text-foreground">
               From packet to{" "}
-              <span className="text-cyan-400">decision</span>
+              <span className="gradient-text">decision</span>
               {" "}in real time
             </h2>
-            <div className="space-y-6">
-              {[
-                { step: "01", title: "Detect", desc: "ML model classifies network events. YARA signatures match patterns. Honeypot captures active probes.", color: "text-cyan-400 border-cyan-500/30" },
-                { step: "02", title: "Triage", desc: "LLM agent maps to MITRE ATT&CK, assigns severity (Critical→Low), and drafts a recommended response.", color: "text-violet-400 border-violet-500/30" },
-                { step: "03", title: "Respond", desc: "Analyst approves or rejects via dashboard. Executed actions are recorded with full audit trail.", color: "text-emerald-400 border-emerald-500/30" },
-              ].map((item) => (
-                <div key={item.step} className={`flex gap-4 p-4 rounded-xl border bg-slate-900/50 ${item.color.split(" ")[1]}`}>
-                  <span className={`text-2xl font-black shrink-0 ${item.color.split(" ")[0]}`}>{item.step}</span>
-                  <div>
-                    <div className="font-bold text-white mb-1">{item.title}</div>
-                    <div className="text-sm text-slate-400">{item.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <TerminalWindow />
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+            {PIPELINE_STEPS.map((item, i) => (
+              <motion.div
+                key={item.step}
+                variants={fadeUp}
+                custom={i}
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true }}
+                className={`rounded-2xl border p-6 ${item.color} hover:shadow-lg hover:-translate-y-1 transition-all duration-300`}
+              >
+                <span className={`text-3xl font-black ${item.textColor} opacity-60`}>{item.step}</span>
+                <h3 className="text-lg font-bold text-foreground mt-3 mb-2">{item.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* ── CTA Banner ───────────────────────────────────────────────────── */}
+      {/* ── CTA Banner ─────────────────────────────────────────────────── */}
       <section className="py-24 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="relative rounded-3xl overflow-hidden border border-cyan-500/20 p-12
-            bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950">
-            {/* Glow effect */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.7 }}
+          className="max-w-4xl mx-auto"
+        >
+          <div className="relative rounded-3xl overflow-hidden border border-indigo-100 p-12 md:p-16
+            bg-gradient-to-br from-white via-indigo-50/50 to-cyan-50/30 shadow-xl shadow-indigo-500/5">
+            {/* Subtle glow */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32
-              bg-gradient-to-b from-cyan-500/20 to-transparent blur-2xl pointer-events-none" />
-            <div className="relative z-10">
-              <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4">
+              bg-gradient-to-b from-indigo-200/30 to-transparent blur-3xl pointer-events-none" />
+
+            <div className="relative z-10 text-center">
+              <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4 text-foreground">
                 Ready to eliminate{" "}
-                <span className="bg-gradient-to-r from-cyan-400 to-violet-500 bg-clip-text text-transparent">
-                  alert fatigue?
-                </span>
+                <span className="gradient-text">alert fatigue?</span>
               </h2>
-              <p className="text-slate-400 text-lg mb-8 max-w-xl mx-auto">
-                Sign in to your SentinelAI dashboard and let the agents work for you.
+              <p className="text-muted-foreground text-lg mb-8 max-w-xl mx-auto">
+                Sign in to your SentinelAI dashboard and let the AI agents work for you.
               </p>
               <Link
                 href="/login"
                 id="hero-cta-bottom"
-                className="inline-flex items-center gap-2 px-10 py-4 rounded-xl font-bold text-base
-                  bg-gradient-to-r from-cyan-500 to-violet-600 text-white
-                  shadow-2xl shadow-cyan-500/30
-                  hover:shadow-cyan-500/50 hover:scale-[1.03]
-                  transition-all duration-200"
+                className="group inline-flex items-center gap-2 btn-gradient px-10 py-4 rounded-xl font-bold text-base"
               >
                 Get Started Now
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6"/>
-                </svg>
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Link>
             </div>
           </div>
-        </div>
+        </motion.div>
       </section>
 
-      {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <footer className="border-t border-white/5 py-8 px-6 text-center">
-        <div className="flex items-center justify-center gap-2 mb-3">
-          <div className="w-5 h-5 rounded bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
-            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd"/>
-            </svg>
+      {/* ── Footer ─────────────────────────────────────────────────────── */}
+      <footer className="border-t border-border/50 py-10 px-6 bg-white/30 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+              <Shield className="w-3 h-3 text-white" />
+            </div>
+            <span className="font-bold text-sm text-foreground">
+              Sentinel<span className="gradient-text">AI</span>
+            </span>
           </div>
-          <span className="font-bold text-sm">Sentinel<span className="text-cyan-400">AI</span></span>
+          <p className="text-xs text-muted-foreground">
+            Agentic AI Alert Triage & Response · Built with FastAPI, LangGraph & Next.js
+          </p>
         </div>
-        <p className="text-xs text-slate-600">
-          Agentic AI Alert Triage &amp; Response · Built with FastAPI &amp; Next.js
-        </p>
       </footer>
     </div>
   );

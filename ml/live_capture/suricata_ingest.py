@@ -109,10 +109,16 @@ class SuricataIngestor:
         Async callback invoked for each parsed alert event dict.
     """
 
-    # Default paths for the Windows installation
-    DEFAULT_BIN = r"C:\Users\User\suricata\suricata.exe"
-    DEFAULT_CONFIG = r"C:\Users\User\suricata\suricata.yaml"
-    DEFAULT_LOG_DIR = r"C:\Users\User\suricata\log\sentinel"
+    # Default paths — overridable via environment variables
+    DEFAULT_BIN = os.environ.get(
+        "SURICATA_BIN", r"C:\Users\User\suricata\suricata.exe"
+    )
+    DEFAULT_CONFIG = os.environ.get(
+        "SURICATA_CONFIG", r"C:\Users\User\suricata\suricata.yaml"
+    )
+    DEFAULT_LOG_DIR = os.environ.get(
+        "SURICATA_LOG_DIR", r"C:\Users\User\suricata\log\sentinel"
+    )
 
     def __init__(
         self,
@@ -134,6 +140,7 @@ class SuricataIngestor:
         self._tail_task: asyncio.Task | None = None
         self._running = False
         self._alert_count = 0
+        self._start_time: float = 0.0
 
     @property
     def running(self) -> bool:
@@ -146,6 +153,21 @@ class SuricataIngestor:
     @property
     def eve_json_path(self) -> Path:
         return Path(self.log_dir) / "eve.json"
+
+    @property
+    def uptime_seconds(self) -> float:
+        """Seconds since Suricata was started (0.0 when stopped)."""
+        if not self._running or self._start_time == 0.0:
+            return 0.0
+        return round(time.time() - self._start_time, 1)
+
+    @property
+    def events_per_minute(self) -> float:
+        """Average alerts per minute since start (0.0 when stopped)."""
+        uptime = self.uptime_seconds
+        if uptime < 1.0:
+            return 0.0
+        return round(self._alert_count / (uptime / 60.0), 2)
 
     # ------------------------------------------------------------------
     # Start / Stop
@@ -205,6 +227,7 @@ class SuricataIngestor:
 
         self._running = True
         self._alert_count = 0
+        self._start_time = time.time()
 
         # Start tailing eve.json in background
         self._tail_task = asyncio.create_task(self._tail_eve_json())

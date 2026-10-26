@@ -71,6 +71,8 @@ from auth import (
     get_current_user,
     login_user,
     register_user,
+    require_role,
+    validate_ws_token,
 )
 
 # Add agents/ to sys.path so we can import the pipeline
@@ -460,7 +462,10 @@ async def health_check() -> HealthResponse:
 
 
 @app.post("/detect", response_model=DetectResponse)
-async def detect(event: NetworkEvent) -> DetectResponse:
+async def detect(
+    event: NetworkEvent,
+    current_user: dict = Depends(get_current_user),
+) -> DetectResponse:
     """Classify a raw network event as normal or anomaly.
 
     Runs TWO parallel detection methods:
@@ -501,7 +506,10 @@ async def detect(event: NetworkEvent) -> DetectResponse:
 
 
 @app.post("/triage")
-async def triage(event: NetworkEvent) -> dict:
+async def triage(
+    event: NetworkEvent,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Detect + run full agent pipeline on a single event.
 
     Hybrid detection: if EITHER the ML model flags anomaly OR a YARA
@@ -839,7 +847,17 @@ async def _replay_loop() -> None:
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
-    """WebSocket endpoint for live event streaming."""
+    """WebSocket endpoint for live event streaming.
+
+    Requires JWT token as query parameter: ws://host/ws?token=<jwt>
+    """
+    # Authenticate before accepting the connection
+    token = websocket.query_params.get("token")
+    try:
+        validate_ws_token(token)
+    except Exception:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
     await websocket.accept()
     _ws_clients.append(websocket)
     print(f"  [ws] Client connected. Total: {len(_ws_clients)}")
@@ -859,7 +877,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 @app.get("/replay/start")
 async def replay_start(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Start replaying KDDTest+ events over WebSocket at 1 event/sec."""
     global _replay_running, _replay_task
@@ -880,7 +898,7 @@ async def replay_start(
 
 @app.get("/replay/stop")
 async def replay_stop(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Stop the replay stream."""
     global _replay_running, _replay_task
@@ -958,9 +976,9 @@ async def _honeypot_on_connection(event: dict) -> None:
         message["attack_techniques"] = agent_result.get("attack_techniques", [])
         message["agent_latency_seconds"] = round(agent_time, 2)
 
-        # IP enrichment
+        # IP enrichment (use real source IP from honeypot connection)
         try:
-            enrichment_data = await enrich_ip(raw)
+            enrichment_data = await enrich_ip(raw, real_ip=hp_meta.get("src_ip"))
             message["ip_enrichment"] = enrichment_data
         except Exception as enrich_exc:
             print(f"  [honeypot] Enrichment error: {enrich_exc}")
@@ -1063,7 +1081,7 @@ async def _honeypot_on_connection(event: dict) -> None:
 @app.get("/honeypot/start")
 async def honeypot_start(
     port: int = 8899,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Start the honeypot listener on localhost (RESEARCH_MODE only)."""
     _require_research_mode()
@@ -1096,7 +1114,7 @@ async def honeypot_start(
 
 @app.get("/honeypot/stop")
 async def honeypot_stop(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Stop the honeypot listener (RESEARCH_MODE only)."""
     _require_research_mode()
@@ -1118,7 +1136,9 @@ async def honeypot_stop(
 
 
 @app.get("/honeypot/status")
-async def honeypot_status() -> dict:
+async def honeypot_status(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Check the honeypot listener status."""
     try:
         if _honeypot and _honeypot.running:
@@ -1187,9 +1207,9 @@ async def _suricata_on_alert(event: dict) -> None:
         message["attack_techniques"] = agent_result.get("attack_techniques", [])
         message["agent_latency_seconds"] = round(agent_time, 2)
 
-        # IP enrichment
+        # IP enrichment (use real source IP from Suricata alert)
         try:
-            enrichment_data = await enrich_ip(raw)
+            enrichment_data = await enrich_ip(raw, real_ip=network_meta.get("src_ip"))
             message["ip_enrichment"] = enrichment_data
         except Exception as enrich_exc:
             print(f"  [suricata] Enrichment error: {enrich_exc}")
@@ -1251,7 +1271,9 @@ async def _suricata_on_alert(event: dict) -> None:
 
 
 @app.get("/interfaces")
-async def get_network_interfaces() -> dict:
+async def get_network_interfaces(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """List available network interfaces for live packet capture (excluding Bluetooth)."""
     try:
         ifaces = detect_interfaces()
@@ -1268,7 +1290,7 @@ async def get_network_interfaces() -> dict:
 @app.get("/suricata/start")
 async def suricata_start(
     interface: str | None = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Start Suricata IDS on a local interface (RESEARCH_MODE only)."""
     _require_research_mode()
@@ -1309,7 +1331,7 @@ async def suricata_start(
 
 @app.get("/suricata/stop")
 async def suricata_stop(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Stop the Suricata IDS engine (RESEARCH_MODE only)."""
     _require_research_mode()
@@ -1330,7 +1352,9 @@ async def suricata_stop(
 
 
 @app.get("/suricata/status")
-async def suricata_status() -> dict:
+async def suricata_status(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Check the Suricata IDS engine status."""
     try:
         if _suricata and _suricata.running:
@@ -1445,7 +1469,7 @@ async def _live_capture_on_event(event: dict) -> None:
 
             # IP enrichment (real IPs from live capture)
             try:
-                enrichment_data = await enrich_ip(raw)
+                enrichment_data = await enrich_ip(raw, real_ip=meta.get("src_ip"))
                 message["ip_enrichment"] = enrichment_data
             except Exception as enrich_exc:
                 print(f"  [live-capture] Enrichment error: {enrich_exc}")
@@ -1504,7 +1528,9 @@ async def _live_capture_on_event(event: dict) -> None:
 
 
 @app.get("/live/interfaces")
-async def live_get_interfaces() -> dict:
+async def live_get_interfaces(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """List available network interfaces for live traffic capture."""
     try:
         interfaces = _get_live_interfaces()
@@ -1531,7 +1557,7 @@ async def live_start(
     interface: str = "Wi-Fi",
     packet_limit: int = 0,
     time_limit: int = 0,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Start live network traffic capture on a WiFi/Ethernet interface.
 
@@ -1566,7 +1592,7 @@ async def live_start(
 @app.get("/live/stop")
 @app.post("/live/stop")
 async def live_stop(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Stop live network traffic capture."""
     global _live_monitor
@@ -1586,7 +1612,9 @@ async def live_stop(
 
 
 @app.get("/live/status")
-async def live_status() -> dict:
+async def live_status(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Check live network traffic capture status."""
     try:
         if _live_monitor and _live_monitor.running:
@@ -1611,6 +1639,7 @@ async def live_status() -> dict:
 async def export_csv(
     source: str,
     regenerate: bool = True,
+    current_user: dict = Depends(require_role("admin")),
 ) -> FileResponse:
     """Export Suricata eve.json alerts or honeypot logs to Excel-compatible CSV.
 
@@ -1663,13 +1692,18 @@ async def export_csv(
 
 
 @app.get("/logs/download-csv")
-async def download_csv_alias(source: str = "suricata") -> FileResponse:
+async def download_csv_alias(
+    source: str = "suricata",
+    current_user: dict = Depends(require_role("admin")),
+) -> FileResponse:
     """Convenience alias for downloading CSV by query parameter."""
     return await export_csv(source=source)
 
 
 @app.get("/logs/csv/list")
-async def list_csvs() -> dict[str, Any]:
+async def list_csvs(
+    current_user: dict = Depends(require_role("admin")),
+) -> dict[str, Any]:
     """List all generated CSV files in data/csv/."""
     try:
         files = list_exported_csvs()
@@ -1684,7 +1718,9 @@ async def list_csvs() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @app.get("/events/pending")
-async def events_pending() -> dict:
+async def events_pending(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """List all events still awaiting human review."""
     try:
         pending = await db.get_pending_events()
@@ -1695,7 +1731,10 @@ async def events_pending() -> dict:
 
 
 @app.get("/events/history")
-async def events_history(limit: int = 50) -> dict:
+async def events_history(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Return resolved events (approved/rejected), most recent first."""
     try:
         history = await db.get_event_history(limit=limit)
@@ -1712,6 +1751,7 @@ async def events_filter(
     risk_classification: str | None = None,
     source: str | None = None,
     limit: int = 100,
+    current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Filter stored events by status, LLM severity, risk classification, or source."""
     try:
@@ -1728,7 +1768,10 @@ async def events_filter(
 
 
 @app.get("/events/{event_id}")
-async def event_status(event_id: str) -> dict:
+async def event_status(
+    event_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Get the current status of a specific event."""
     try:
         ev = await db.get_event(event_id)
@@ -1745,7 +1788,7 @@ async def event_status(event_id: str) -> dict:
 @app.post("/events/{event_id}/approve")
 async def event_approve(
     event_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Approve the recommended action for a pending event.
 
@@ -1795,7 +1838,7 @@ async def event_approve(
 @app.post("/events/{event_id}/reject")
 async def event_reject(
     event_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Reject the recommended action for a pending event.
 
@@ -1846,7 +1889,7 @@ async def event_reject(
 @app.post("/events/{event_id}/investigate")
 async def event_investigate(
     event_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Mark an event as 'investigating'."""
     try:
@@ -1884,7 +1927,7 @@ async def event_investigate(
 @app.post("/events/{event_id}/false_positive")
 async def event_false_positive(
     event_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Mark an event as 'false_positive'."""
     try:
@@ -1924,7 +1967,9 @@ async def event_false_positive(
 # ---------------------------------------------------------------------------
 
 @app.get("/stats/overview")
-async def stats_overview() -> dict:
+async def stats_overview(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
     """Return aggregated event counts by severity, status, and detection source.
 
     Powers the dashboard summary panel. No auth required — read-only aggregate
@@ -1951,14 +1996,45 @@ async def dataset_upload(
     file: UploadFile = File(...),
     model_type: str = Form("xgboost"),
     max_rows: int = Form(100),
+    current_user: dict = Depends(require_role("analyst")),
 ) -> dict:
     """Accept a CSV file, detect schema (NSL-KDD, CICIDS2017, UNSW-NB15),
     map features to the trained model's NSL-KDD schema, and run detection + triage pipeline."""
     if _model is None:
         raise HTTPException(status_code=503, detail="Detection models not loaded.")
 
+    # ── Upload validation ─────────────────────────────────────────────
+    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+    # Check file extension
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only .csv files are accepted. Got: '{file.filename}'",
+        )
+
+    # Check content type (browsers send text/csv or application/vnd.ms-excel)
+    allowed_types = {"text/csv", "application/vnd.ms-excel", "application/octet-stream"}
+    if file.content_type and file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid content type '{file.content_type}'. Expected text/csv.",
+        )
+
+    # Read with size limit
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({len(contents) / 1024 / 1024:.1f} MB). "
+                   f"Maximum allowed: {MAX_UPLOAD_BYTES / 1024 / 1024:.0f} MB.",
+        )
+
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
     try:
-        contents = await file.read()
         mapped_result = process_csv_upload(contents, max_rows=max_rows)
     except SchemaDetectionError as sde:
         return JSONResponse(status_code=400, content=sde.details)

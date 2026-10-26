@@ -1,37 +1,31 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-
-// ─── Lazy-load 2D canvas background ──────────────────────────────────────────
-const DashboardBackground = dynamic(
-  () => import("@/components/home/DashboardBackground"),
-  { ssr: false }
-);
+import { motion } from "framer-motion";
+import { Shield, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-// ─── Auth helpers ─────────────────────────────────────────────────────────────
+// ── Auth helpers ─────────────────────────────────────────────────────────────
 function saveToken(token: string, username: string) {
   localStorage.setItem("sentinel_token", token);
   localStorage.setItem("sentinel_user", username);
 }
 
-// ─── Login Page ───────────────────────────────────────────────────────────────
+// ── Login Page ───────────────────────────────────────────────────────────────
 export default function LoginPage() {
   const router = useRouter();
-  const cardRef = useRef<HTMLDivElement>(null);
 
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [shaking, setShaking] = useState(false);
-  const [exiting, setExiting] = useState(false);
 
   // Shake card on error
   useEffect(() => {
@@ -62,7 +56,7 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data?.detail ?? `Request failed (${res.status})`);
+        setError(data.detail || "Something went wrong.");
         return;
       }
 
@@ -75,183 +69,177 @@ export default function LoginPage() {
           body: JSON.stringify({ username: username.trim(), password }),
         });
         const loginData = await loginRes.json();
-        if (loginRes.ok) {
+        if (loginRes.ok && loginData.access_token) {
           saveToken(loginData.access_token, loginData.username);
-          setTimeout(() => router.push("/dashboard"), 800);
+          setTimeout(() => router.push("/dashboard"), 600);
+        } else {
+          setMode("login");
+          setSuccess("Account created! Please sign in.");
         }
       } else {
         saveToken(data.access_token, data.username);
-        // Slide out and navigate
-        setExiting(true);
-        setTimeout(() => router.push("/dashboard"), 400);
+        router.push("/dashboard");
       }
-    } catch (err) {
-      setError("Could not reach the backend. Is the server running?");
+    } catch {
+      setError("Cannot reach the server. Is the backend running?");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="sentinel-dark-page relative min-h-screen bg-[#050812] flex items-center justify-center overflow-hidden p-4">
-
-      {/* Background 2D particle network (muted) */}
-      <DashboardBackground />
-
-      {/* Radial glow */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-          w-[600px] h-[600px] rounded-full
-          bg-gradient-radial from-cyan-500/8 via-violet-600/4 to-transparent blur-3xl" />
+    <div className="min-h-screen gradient-mesh-bg flex items-center justify-center p-6">
+      {/* Background decoration */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-indigo-100/40 blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-cyan-100/30 blur-3xl" />
       </div>
 
-      <div className="relative z-10 w-full max-w-md">
-
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.5 }}
+        className="relative z-10 w-full max-w-md"
+      >
         {/* Logo */}
-        <div
-          className="flex flex-col items-center mb-8
-            animate-[fadeSlideDown_0.6s_cubic-bezier(0.33,1,0.68,1)_both]"
-        >
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-violet-600
-            flex items-center justify-center mb-4 shadow-2xl shadow-cyan-500/30">
-            <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd"/>
-            </svg>
+        <div className="flex items-center justify-center gap-2.5 mb-8">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <Shield className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-2xl font-black tracking-tight text-white">
-            Sentinel<span className="text-cyan-400">AI</span>
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">Agentic Threat Intelligence Platform</p>
+          <span className="font-black text-2xl tracking-tight text-foreground">
+            Sentinel<span className="gradient-text">AI</span>
+          </span>
         </div>
 
         {/* Card */}
         <div
-          ref={cardRef}
-          className={`rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-xl
-            shadow-2xl shadow-black/40 p-8
-            animate-[fadeSlideUp_0.7s_0.2s_cubic-bezier(0.33,1,0.68,1)_both]
-            ${shaking ? "animate-[shakeX_0.4s_ease-out]" : ""}
-            ${exiting ? "transition-all duration-400 opacity-0 -translate-y-5" : ""}`}
+          className={`glass-card rounded-2xl p-8 shadow-xl shadow-slate-200/50
+            ${shaking ? "animate-[shakeX_0.4s_ease]" : ""}`}
         >
-          {/* Mode tabs */}
-          <div className="flex rounded-xl overflow-hidden border border-slate-700/60 mb-6 bg-slate-950/50">
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-black text-foreground mb-1">
+              {mode === "login" ? "Welcome back" : "Create account"}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {mode === "login"
+                ? "Sign in to access your security dashboard"
+                : "Register for a new analyst account"}
+            </p>
+          </div>
+
+          {/* Mode toggle */}
+          <div className="flex rounded-xl bg-muted p-1 mb-6">
             {(["login", "register"] as const).map((m) => (
               <button
                 key={m}
-                id={`tab-${m}`}
                 onClick={() => { setMode(m); setError(""); setSuccess(""); }}
-                className={`flex-1 py-2.5 text-sm font-semibold capitalize transition-all duration-200
+                className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200
                   ${mode === m
-                    ? "bg-gradient-to-r from-cyan-500 to-violet-600 text-white"
-                    : "text-slate-500 hover:text-slate-300"}`}
+                    ? "bg-white text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 {m === "login" ? "Sign In" : "Register"}
               </button>
             ))}
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            {/* Username */}
+          {/* Error / Success messages */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 px-4 py-3 mb-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {error}
+            </motion.div>
+          )}
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 px-4 py-3 mb-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 text-sm"
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              {success}
+            </motion.div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="login-username" className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-1.5">
                 Username
               </label>
               <input
-                id="login-username"
                 type="text"
-                autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="analyst@sentinelai"
-                className="w-full px-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700/60 text-white
-                  placeholder-slate-600 text-sm
-                  focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30
+                placeholder="analyst"
+                autoComplete="username"
+                className="w-full px-4 py-3 rounded-xl border border-border bg-white
+                  text-foreground placeholder:text-muted-foreground/50
+                  focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300
                   transition-all duration-200"
               />
             </div>
 
-            {/* Password */}
             <div>
-              <label htmlFor="login-password" className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-1.5">
                 Password
               </label>
-              <input
-                id="login-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700/60 text-white
-                  placeholder-slate-600 text-sm
-                  focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30
-                  transition-all duration-200"
-              />
-              {mode === "register" && (
-                <p className="text-xs text-slate-600 mt-1.5">Minimum 6 characters</p>
-              )}
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  className="w-full px-4 py-3 pr-12 rounded-xl border border-border bg-white
+                    text-foreground placeholder:text-muted-foreground/50
+                    focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300
+                    transition-all duration-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
-            {/* Error / Success */}
-            {error && (
-              <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                <svg className="w-4 h-4 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
-                </svg>
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
-                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                </svg>
-                {success}
-              </div>
-            )}
-
-            {/* Submit */}
             <button
-              id="login-submit"
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl font-bold text-sm text-white
-                bg-gradient-to-r from-cyan-500 to-violet-600
-                shadow-lg shadow-cyan-500/20
-                hover:shadow-cyan-500/40 hover:scale-[1.01]
-                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                transition-all duration-200 flex items-center justify-center gap-2"
+              className="w-full btn-gradient py-3 rounded-xl font-bold text-sm
+                disabled:opacity-50 disabled:cursor-not-allowed
+                flex items-center justify-center gap-2"
             >
               {loading ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  {mode === "login" ? "Signing in…" : "Creating account…"}
-                </>
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                mode === "login" ? "Sign In to Dashboard" : "Create Account"
+                <>
+                  {mode === "login" ? "Sign In" : "Create Account"}
+                  <ArrowRight className="w-4 h-4" />
+                </>
               )}
             </button>
           </form>
-
-          {/* Security note */}
-          <div className="flex items-center justify-center gap-1.5 mt-6 text-xs text-slate-600">
-            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"/>
-            </svg>
-            Secured with JWT · bcrypt · HTTPS-ready
-          </div>
         </div>
 
-        {/* Back link */}
+        {/* Back to landing */}
         <div className="text-center mt-6">
-          <Link href="/" className="text-sm text-slate-600 hover:text-slate-400 transition-colors">
-            ← Back to homepage
+          <Link
+            href="/"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ← Back to SentinelAI
           </Link>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

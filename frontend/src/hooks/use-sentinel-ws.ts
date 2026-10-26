@@ -211,7 +211,9 @@ export function useSentinelWS() {
 
     let ws: WebSocket;
     try {
-      ws = new WebSocket(WS_URL);
+      const token = getToken();
+      const wsUrl = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL;
+      ws = new WebSocket(wsUrl);
     } catch {
       scheduleReconnectRef.current();
       return;

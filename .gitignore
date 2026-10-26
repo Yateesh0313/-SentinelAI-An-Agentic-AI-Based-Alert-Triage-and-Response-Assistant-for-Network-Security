@@ -65,4 +65,6 @@ desktop.ini
 
 *.npy
 !ml/results/quantum_weights.npy
+*.pcap
+captures/
 
