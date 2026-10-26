@@ -22,6 +22,12 @@ import { DatasetUploadView } from "@/components/dataset-upload-view";
 
 const API_BASE = "http://localhost:8000";
 
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const token = localStorage.getItem("sentinel_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Tiny mini-sparkline using SVG path                                         */
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -1037,9 +1043,12 @@ function StatsOverview({
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/stats/overview`);
+      const res = await fetch(`${API_BASE}/stats/overview`, { headers: getAuthHeaders() });
+      if (!res.ok) return;
       const data = await res.json();
-      setStats(data);
+      if (data && typeof data.total_events === "number") {
+        setStats(data);
+      }
     } catch { /* silent fail */ }
   }, []);
 
@@ -1054,7 +1063,11 @@ function StatsOverview({
     setModalLoading(true);
     try {
       const query = new URLSearchParams(filter).toString();
-      const res = await fetch(`${API_BASE}/events/filter?${query}`);
+      const res = await fetch(`${API_BASE}/events/filter?${query}`, { headers: getAuthHeaders() });
+      if (!res.ok) {
+        setModalEvents([]);
+        return;
+      }
       const data = await res.json();
       setModalEvents(data.events || []);
     } catch (err) {
@@ -1070,17 +1083,17 @@ function StatsOverview({
     setModalEvents([]);
   };
 
-  if (!stats || stats.total_events === 0) return null;
+  if (!stats || !stats.total_events || stats.total_events <= 0) return null;
 
   const tiles: { label: string; value: number; accent: string; color: string; icon: string; filter: Record<string, string>; subtitle?: string }[] = [
     { label: "Total Events",    value: stats.total_events,     accent: "accent-indigo",  color: "#4f46e5", icon: "📁", filter: { status: "all" } },
-    { label: "Pending Review",  value: stats.pending_review,   accent: "accent-amber",   color: "#d97706", icon: "⏳", filter: { status: "pending_review" }, subtitle: "needs action" },
-    { label: "Investigating",   value: stats.investigating,    accent: "accent-cyan",    color: "#0891b2", icon: "🔍", filter: { status: "investigating" } },
-    { label: "LLM Critical",    value: stats.critical_severity,accent: "accent-red",     color: "#dc2626", icon: "🚨", filter: { llm_severity: "Critical" } },
-    { label: "Risk CRITICAL",   value: stats.risk_critical,    accent: "accent-red",     color: "#b91c1c", icon: "⚠",  filter: { risk_classification: "CRITICAL" } },
-    { label: "Honeypot Events", value: stats.honeypot_sourced, accent: "accent-fuchsia", color: "#a21caf", icon: "🍯", filter: { source: "honeypot" } },
+    { label: "Pending Review",  value: stats.pending_review ?? 0,   accent: "accent-amber",   color: "#d97706", icon: "⏳", filter: { status: "pending_review" }, subtitle: "needs action" },
+    { label: "Investigating",   value: stats.investigating ?? 0,    accent: "accent-cyan",    color: "#0891b2", icon: "🔍", filter: { status: "investigating" } },
+    { label: "LLM Critical",    value: stats.critical_severity ?? 0,accent: "accent-red",     color: "#dc2626", icon: "🚨", filter: { llm_severity: "Critical" } },
+    { label: "Risk CRITICAL",   value: stats.risk_critical ?? 0,    accent: "accent-red",     color: "#b91c1c", icon: "⚠",  filter: { risk_classification: "CRITICAL" } },
+    { label: "Honeypot Events", value: stats.honeypot_sourced ?? 0, accent: "accent-fuchsia", color: "#a21caf", icon: "🍯", filter: { source: "honeypot" } },
     { label: "Suricata Events", value: stats.suricata_sourced ?? stats.by_source?.["suricata"] ?? 0, accent: "accent-teal", color: "#0d9488", icon: "🛡️", filter: { source: "suricata" } },
-    { label: "False Positives", value: stats.false_positives,  accent: "accent-violet",  color: "#7c3aed", icon: "❌", filter: { status: "false_positive" } },
+    { label: "False Positives", value: stats.false_positives ?? 0,  accent: "accent-violet",  color: "#7c3aed", icon: "❌", filter: { status: "false_positive" } },
   ];
 
   return (
@@ -1114,7 +1127,7 @@ function StatsOverview({
       </div>
 
       {/* Severity distribution charts */}
-      {Object.keys(stats.by_llm_severity).length > 0 && (
+      {stats.by_llm_severity && Object.keys(stats.by_llm_severity).length > 0 && (
         <div className="mt-3 grid grid-cols-2 gap-3">
           {/* LLM distribution */}
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1124,7 +1137,7 @@ function StatsOverview({
             </div>
             <div className="space-y-2">
               {["Critical", "High", "Medium", "Low"].map((sev) => {
-                const count = stats.by_llm_severity[sev] ?? 0;
+                const count = stats.by_llm_severity?.[sev] ?? 0;
                 const pct = stats.total_events > 0 ? Math.round((count / stats.total_events) * 100) : 0;
                 const col = { Critical: "bg-red-500", High: "bg-orange-400", Medium: "bg-amber-400", Low: "bg-emerald-400" }[sev] ?? "bg-slate-400";
                 const textCol = { Critical: "text-red-600", High: "text-orange-600", Medium: "text-amber-600", Low: "text-emerald-600" }[sev] ?? "text-slate-500";
@@ -1152,7 +1165,7 @@ function StatsOverview({
             </div>
             <div className="space-y-2">
               {["CRITICAL", "HIGH", "MEDIUM", "LOW"].map((cls) => {
-                const count = stats.by_risk_class[cls] ?? 0;
+                const count = stats.by_risk_class?.[cls] ?? 0;
                 const pct = stats.total_events > 0 ? Math.round((count / stats.total_events) * 100) : 0;
                 const col = { CRITICAL: "bg-red-500", HIGH: "bg-orange-400", MEDIUM: "bg-amber-400", LOW: "bg-emerald-400" }[cls] ?? "bg-slate-400";
                 const textCol = { CRITICAL: "text-red-600", HIGH: "text-orange-600", MEDIUM: "text-amber-600", LOW: "text-emerald-600" }[cls] ?? "text-slate-500";
@@ -1294,13 +1307,18 @@ function HistoryView({ onExportCsv }: { onExportCsv?: (source: "suricata" | "hon
   const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/events/history?limit=50`);
+      const res = await fetch(`${API_BASE}/events/history?limit=50`, { headers: getAuthHeaders() });
+      if (!res.ok) {
+        setHistory([]);
+        return;
+      }
       const data = await res.json();
       setHistory(data.events || []);
     } catch (err) {
       console.error("History fetch error:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
@@ -1403,6 +1421,21 @@ export default function Home() {
   const [livePacketLimit, setLivePacketLimit] = useState<number>(0);
   const [liveTimeLimit, setLiveTimeLimit] = useState<number>(0);
   const [showLiveSnifferPanel, setShowLiveSnifferPanel] = useState<boolean>(true);
+  const [mounted, setMounted] = useState(false);
+  const [currentUser, setCurrentUser] = useState<string>("");
+
+  useEffect(() => {
+    setMounted(true);
+    const token = localStorage.getItem("sentinel_token");
+    const user = localStorage.getItem("sentinel_user");
+    if (!token) {
+      window.location.href = "/login";
+      return;
+    }
+    if (user) {
+      setCurrentUser(user);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedInterface && defaultInterface) setSelectedInterface(defaultInterface);
@@ -1428,7 +1461,7 @@ export default function Home() {
     setDownloadingCsv(source);
     setCsvNotice(null);
     try {
-      const res = await fetch(`${API_BASE}/logs/export/csv/${source}`);
+      const res = await fetch(`${API_BASE}/logs/export/csv/${source}`, { headers: getAuthHeaders() });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.detail || `Failed to export ${source} CSV (${res.status})`);
@@ -1498,9 +1531,7 @@ export default function Home() {
             {/* Right nav */}
             <div className="flex items-center gap-3">
               <span className="text-xs text-slate-500 hidden sm:block" id="dashboard-username">
-                {typeof window !== "undefined" && localStorage.getItem("sentinel_user")
-                  ? `👤 ${localStorage.getItem("sentinel_user")}`
-                  : ""}
+                {mounted && currentUser ? `👤 ${currentUser}` : ""}
               </span>
               <Button
                 id="dashboard-signout"
