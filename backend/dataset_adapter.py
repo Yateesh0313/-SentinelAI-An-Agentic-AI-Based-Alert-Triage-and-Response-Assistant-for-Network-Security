@@ -82,7 +82,7 @@ CICIDS2017_SIGNATURES: set[str] = {
     "bwd_packet_length_mean", "fwd_packet_length_mean",
 }
 
-# Canonical UNSW-NB15 columns
+# Canonical UNSW-NB15 training/testing-set columns
 UNSW_NB15_CANONICAL_COLS: list[str] = [
     "dur", "proto", "service", "state", "spkts", "dpkts", "sbytes", "dbytes",
     "rate", "sttl", "dttl", "sload", "dload", "sloss", "dloss", "sinpkt",
@@ -94,12 +94,76 @@ UNSW_NB15_CANONICAL_COLS: list[str] = [
     "attack_cat", "label",
 ]
 
-# Unique signature columns that distinguish UNSW-NB15
+# Unique signature columns that distinguish UNSW-NB15 training set
 UNSW_NB15_SIGNATURES: set[str] = {
     "dur", "proto", "sbytes", "dbytes", "sttl", "dttl", "sloss", "dloss",
     "sload", "dload", "ct_srv_src", "ct_dst_ltm", "ct_src_dport_ltm",
     "ct_dst_sport_ltm", "ct_dst_src_ltm", "is_sm_ips_ports",
 }
+
+# Full-file layout signature headers (case-insensitive):
+# srcip, sport, dstip, dsport, proto, state, dur, sbytes, dbytes, attack_cat, label (49 columns)
+UNSW_NB15_FULL_HEADERS: set[str] = {
+    "srcip", "sport", "dstip", "dsport", "proto", "state", "dur",
+    "sbytes", "dbytes", "attack_cat", "label"
+}
+
+# The 49 columns of the raw UNSW-NB15 full-file layout
+UNSW_NB15_FULL_CANONICAL_COLS: list[str] = [
+    "srcip", "sport", "dstip", "dsport", "proto", "state", "dur", "sbytes", "dbytes",
+    "sttl", "dttl", "sloss", "dloss", "service", "sload", "dload", "spkts", "dpkts",
+    "swin", "dwin", "stcpb", "dtcpb", "smeansz", "dmeansz", "trans_depth", "res_bdy_len",
+    "sjit", "djit", "stime", "ltime", "sintpkt", "dintpkt", "tcprtt", "synack", "ackdat",
+    "is_sm_ips_ports", "ct_state_ttl", "ct_flw_http_mthd", "is_ftp_login", "ct_ftp_cmd",
+    "ct_srv_src", "ct_srv_dst", "ct_dst_ltm", "ct_src_ltm", "ct_src_dport_ltm",
+    "ct_dst_sport_ltm", "ct_dst_src_ltm", "attack_cat", "label"
+]
+
+# The 41 features shared by BOTH layouts (used for unsw_nb15_xgb model inference)
+UNSW_SHARED_FEATURES: list[str] = [
+    "dur", "proto", "service", "state", "spkts", "dpkts", "sbytes", "dbytes",
+    "sttl", "dttl", "sload", "dload", "sloss", "dloss", "sinpkt", "dinpkt",
+    "sjit", "djit", "swin", "stcpb", "dtcpb", "dwin", "tcprtt", "synack",
+    "ackdat", "smean", "dmean", "trans_depth", "response_body_len",
+    "ct_srv_src", "ct_state_ttl", "ct_dst_ltm", "ct_src_dport_ltm",
+    "ct_dst_sport_ltm", "ct_dst_src_ltm", "is_ftp_login", "ct_ftp_cmd",
+    "ct_flw_http_mthd", "ct_src_ltm", "ct_srv_dst", "is_sm_ips_ports"
+]
+
+# Full-file name normalization:
+# Sload→sload, Dload→dload, Spkts→spkts, Dpkts→dpkts, smeansz→smean, dmeansz→dmean,
+# res_bdy_len→response_body_len, Sjit→sjit, Djit→djit, Sintpkt→sinpkt, Dintpkt→dinpkt
+UNSW_NORMALIZATION_MAP: dict[str, str] = {
+    "sload": "sload",
+    "dload": "dload",
+    "spkts": "spkts",
+    "dpkts": "dpkts",
+    "smeansz": "smean",
+    "dmeansz": "dmean",
+    "res_bdy_len": "response_body_len",
+    "sjit": "sjit",
+    "djit": "djit",
+    "sintpkt": "sinpkt",
+    "dintpkt": "dinpkt",
+}
+
+# Display-only fields dropped from model features but kept in display frame:
+# srcip, dstip, sport, dsport, Stime, Ltime, id, rate
+DISPLAY_ONLY_COLS: list[str] = [
+    "srcip", "dstip", "sport", "dsport", "stime", "ltime", "id", "rate"
+]
+
+
+def clean_attack_cat(val: Any) -> str:
+    """Strip whitespace from attack_cat, merge Backdoor/Backdoors, fill blank with 'Normal'."""
+    if val is None or pd.isna(val):
+        return "Normal"
+    s = str(val).strip()
+    if not s or s.lower() in ("-", "none", "nan", "null", ""):
+        return "Normal"
+    if s.lower() in ("backdoor", "backdoors"):
+        return "Backdoors"
+    return s
 
 # Unique signature columns that distinguish NSL-KDD
 NSL_KDD_SIGNATURES: set[str] = {
@@ -132,6 +196,7 @@ class SchemaDetectionResult:
     matched_columns: list[str]
     missing_template_columns: list[str]
     confidence: float
+    layout: str = "default"  # "full" | "train" | "default"
 
 
 @dataclass
@@ -143,6 +208,8 @@ class MappedDatasetResult:
     columns_matched: list[str]
     columns_defaulted: list[str]
     raw_df: pd.DataFrame
+    display_df: pd.DataFrame | None = None
+    model_target: str = "nsl_kdd_xgb"  # "nsl_kdd_xgb" | "unsw_nb15_xgb"
 
 
 # ---------------------------------------------------------------------------
@@ -200,24 +267,40 @@ def detect_schema(raw_columns: list[str]) -> SchemaDetectionResult:
 
     # 3. Evaluate UNSW-NB15
     unsw_norm = {normalize_col(c) for c in UNSW_NB15_CANONICAL_COLS}
+    unsw_full_norm = {normalize_col(c) for c in UNSW_NB15_FULL_CANONICAL_COLS}
     unsw_matched = norm_set.intersection(unsw_norm)
     unsw_signatures_matched = norm_set.intersection(UNSW_NB15_SIGNATURES)
     unsw_missing = [c for c in UNSW_NB15_CANONICAL_COLS if normalize_col(c) not in norm_set]
 
+    # Full-file layout detection signature:
+    # Detected by these headers (case-insensitive): srcip, sport, dstip, dsport, proto, state, dur, sbytes, dbytes, attack_cat, label (49 columns)
+    unsw_full_matched_headers = norm_set.intersection(UNSW_NB15_FULL_HEADERS)
+    is_unsw_full = (
+        len(unsw_full_matched_headers) >= 9
+        and ("srcip" in norm_set or "dstip" in norm_set)
+        and ("sport" in norm_set or "dsport" in norm_set)
+    )
+
     # Match scoring
     is_nsl = len(nsl_matched) >= 32 or (len(nsl_matched) >= 20 and len(nsl_signatures_matched) >= 4)
     is_cic = len(cic_matched) >= 30 or len(cic_signatures_matched) >= 5
-    is_unsw = len(unsw_matched) >= 20 or len(unsw_signatures_matched) >= 5
+    is_unsw = is_unsw_full or len(unsw_matched) >= 20 or len(unsw_signatures_matched) >= 5
 
     # Specificity resolution
+    unsw_score_val = max(
+        len(unsw_matched) / len(UNSW_NB15_CANONICAL_COLS),
+        len(unsw_full_matched_headers) / len(UNSW_NB15_FULL_HEADERS),
+    )
     scores = {
         "NSL-KDD": (len(nsl_matched) / len(NSL_KDD_FEATURE_COLS), len(nsl_signatures_matched), len(nsl_matched)),
         "CICIDS2017": (len(cic_matched) / len(CICIDS2017_CANONICAL_COLS), len(cic_signatures_matched), len(cic_matched)),
-        "UNSW-NB15": (len(unsw_matched) / len(UNSW_NB15_CANONICAL_COLS), len(unsw_signatures_matched), len(unsw_matched)),
+        "UNSW-NB15": (unsw_score_val, len(unsw_signatures_matched), len(unsw_matched)),
     }
 
     best_schema = None
-    if is_nsl and scores["NSL-KDD"][0] >= scores["CICIDS2017"][0] and scores["NSL-KDD"][0] >= scores["UNSW-NB15"][0]:
+    if is_unsw_full:
+        best_schema = "UNSW-NB15"
+    elif is_nsl and scores["NSL-KDD"][0] >= scores["CICIDS2017"][0] and scores["NSL-KDD"][0] >= scores["UNSW-NB15"][0]:
         best_schema = "NSL-KDD"
     elif is_cic and scores["CICIDS2017"][1] >= scores["UNSW-NB15"][1]:
         best_schema = "CICIDS2017"
@@ -276,6 +359,7 @@ def detect_schema(raw_columns: list[str]) -> SchemaDetectionResult:
             matched_columns=matched_cols,
             missing_template_columns=nsl_missing,
             confidence=round(scores["NSL-KDD"][0], 2),
+            layout="default",
         )
 
     elif best_schema == "CICIDS2017":
@@ -289,20 +373,36 @@ def detect_schema(raw_columns: list[str]) -> SchemaDetectionResult:
             matched_columns=matched_cols,
             missing_template_columns=cic_missing,
             confidence=round(scores["CICIDS2017"][0], 2),
+            layout="default",
         )
 
     else:  # UNSW-NB15
-        matched_cols = [norm_map[k] for k in unsw_matched]
-        display = f"Detected format: UNSW-NB15 ({total_cols} columns, {len(unsw_matched)} standard Argus/Bro attributes)"
-        return SchemaDetectionResult(
-            schema_name="UNSW-NB15",
-            format_display=display,
-            total_columns_in_file=total_cols,
-            matched_columns_count=len(unsw_matched),
-            missing_template_columns=unsw_missing,
-            matched_columns=matched_cols,
-            confidence=round(scores["UNSW-NB15"][0], 2),
-        )
+        if is_unsw_full:
+            full_matched_cols = [norm_map[k] for k in norm_set if k in unsw_full_norm]
+            display = "Detected: UNSW-NB15 (full-file layout) → unsw_nb15_xgb"
+            return SchemaDetectionResult(
+                schema_name="UNSW-NB15",
+                format_display=display,
+                total_columns_in_file=total_cols,
+                matched_columns_count=len(full_matched_cols),
+                missing_template_columns=[c for c in UNSW_NB15_FULL_CANONICAL_COLS if normalize_col(c) not in norm_set],
+                matched_columns=full_matched_cols,
+                confidence=round(len(unsw_full_matched_headers) / len(UNSW_NB15_FULL_HEADERS), 2),
+                layout="full",
+            )
+        else:
+            matched_cols = [norm_map[k] for k in unsw_matched]
+            display = "Detected: UNSW-NB15 (training-set layout) → unsw_nb15_xgb"
+            return SchemaDetectionResult(
+                schema_name="UNSW-NB15",
+                format_display=display,
+                total_columns_in_file=total_cols,
+                matched_columns_count=len(unsw_matched),
+                missing_template_columns=unsw_missing,
+                matched_columns=matched_cols,
+                confidence=round(scores["UNSW-NB15"][0], 2),
+                layout="train",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +704,85 @@ def map_dataset_to_nsl_kdd(
         columns_matched=sorted(list(columns_matched)),
         columns_defaulted=sorted(list(columns_defaulted)),
         raw_df=df,
+        display_df=None,
+        model_target="nsl_kdd_xgb",
+    )
+
+
+def map_unsw_dataset(
+    df: pd.DataFrame,
+    detection: SchemaDetectionResult,
+) -> MappedDatasetResult:
+    """Map either UNSW-NB15 layout (full-file or training-set) to the 41 shared features.
+
+    Requirements:
+    1. Normalise names: Sload→sload, Dload→dload, Spkts→spkts, Dpkts→dpkts,
+       smeansz→smean, dmeansz→dmean, res_bdy_len→response_body_len,
+       Sjit→sjit, Djit→djit, Sintpkt→sinpkt, Dintpkt→dinpkt.
+    2. Strip whitespace from attack_cat, merge Backdoor/Backdoors, fill blank with 'Normal'.
+    3. Drop srcip, dstip, sport, dsport, Stime, Ltime, id, and rate from the model features.
+       Keep the IPs and times in a separate display-only frame so alerts can still show the source IP.
+    4. Both layouts go through the shared 41 features for unsw_nb15_xgb. Do NOT compute or invent a 'rate' column.
+    """
+    n_rows = len(df)
+
+    # 1. Normalise column names using UNSW_NORMALIZATION_MAP
+    rename_dict: dict[str, str] = {}
+    for raw_col in df.columns:
+        norm_k = normalize_col(raw_col)
+        if norm_k in UNSW_NORMALIZATION_MAP:
+            rename_dict[raw_col] = UNSW_NORMALIZATION_MAP[norm_k]
+        else:
+            rename_dict[raw_col] = norm_k
+
+    df_norm = df.rename(columns=rename_dict).copy()
+
+    # 2. Clean attack_cat
+    if "attack_cat" in df_norm.columns:
+        df_norm["attack_cat"] = df_norm["attack_cat"].apply(clean_attack_cat)
+    else:
+        df_norm["attack_cat"] = "Normal"
+
+    # 3. Extract display-only frame (preserving IPs, ports, timestamps, attack_cat, label)
+    display_df = pd.DataFrame(index=df_norm.index)
+    for col in ["srcip", "dstip", "sport", "dsport", "stime", "ltime", "id", "rate", "attack_cat", "label"]:
+        if col in df_norm.columns:
+            display_df[col] = df_norm[col]
+        else:
+            display_df[col] = None
+
+    # 4. Build model features DataFrame with exactly the 41 shared features
+    # (Drop srcip, dstip, sport, dsport, stime, ltime, id, rate from model features)
+    columns_matched: set[str] = set()
+    columns_defaulted: set[str] = set()
+    mapped_dict: dict[str, list[Any]] = {}
+
+    for feat in UNSW_SHARED_FEATURES:
+        if feat in df_norm.columns:
+            columns_matched.add(feat)
+            if feat in ("proto", "service", "state"):
+                mapped_dict[feat] = df_norm[feat].fillna("-").astype(str).str.strip().str.lower().tolist()
+            else:
+                mapped_dict[feat] = pd.to_numeric(df_norm[feat], errors="coerce").fillna(0.0).astype(float).tolist()
+        else:
+            columns_defaulted.add(feat)
+            if feat in ("proto", "service", "state"):
+                mapped_dict[feat] = ["-"] * n_rows
+            else:
+                mapped_dict[feat] = [0.0] * n_rows
+
+    model_features_df = pd.DataFrame(mapped_dict, columns=UNSW_SHARED_FEATURES)
+
+    return MappedDatasetResult(
+        schema_name=detection.schema_name,
+        format_display=detection.format_display,
+        df_mapped=model_features_df,
+        total_rows=n_rows,
+        columns_matched=sorted(list(columns_matched)),
+        columns_defaulted=sorted(list(columns_defaulted)),
+        raw_df=df,
+        display_df=display_df,
+        model_target="unsw_nb15_xgb",
     )
 
 
@@ -648,7 +827,10 @@ def process_csv_upload(csv_bytes: bytes, max_rows: int = 100) -> MappedDatasetRe
     if len(df) == 0:
         raise SchemaDetectionError("The CSV file has header columns but no data rows.", {"error": "no_data_rows"})
 
-    return map_dataset_to_nsl_kdd(df, detection)
+    if detection.schema_name == "UNSW-NB15":
+        return map_unsw_dataset(df, detection)
+    else:
+        return map_dataset_to_nsl_kdd(df, detection)
 
 
 # ---------------------------------------------------------------------------
@@ -682,20 +864,44 @@ def generate_sample_csv(template_name: str) -> str:
         r3 = "22,950000,8,6,650,1200,1947.3,14.7,158333.3,1,1,0,1,1,0,14600,SSH-Patator"
         return f"{header}\n{r1}\n{r2}\n{r3}\n"
 
+    elif "unsw_full" in t or "unsw_nb15_full" in t or "full" in t:
+        # Valid UNSW-NB15 full-file layout sample CSV (49 columns)
+        # Headers: srcip, sport, dstip, dsport, proto, state, dur, sbytes, dbytes, ... Sload, Dload, Spkts, Dpkts, smeansz, dmeansz, res_bdy_len, Sjit, Djit, Stime, Ltime, Sintpkt, Dintpkt ... attack_cat, label
+        cols = list(UNSW_NB15_FULL_CANONICAL_COLS)
+        # Rename raw unnormalized headers to standard full-file formatting
+        raw_headers = [
+            "srcip", "sport", "dstip", "dsport", "proto", "state", "dur", "sbytes", "dbytes",
+            "sttl", "dttl", "sloss", "dloss", "service", "Sload", "Dload", "Spkts", "Dpkts",
+            "swin", "dwin", "stcpb", "dtcpb", "smeansz", "dmeansz", "trans_depth", "res_bdy_len",
+            "Sjit", "Djit", "Stime", "Ltime", "Sintpkt", "Dintpkt", "tcprtt", "synack", "ackdat",
+            "is_sm_ips_ports", "ct_state_ttl", "ct_flw_http_mthd", "is_ftp_login", "ct_ftp_cmd",
+            "ct_srv_src", "ct_srv_dst", "ct_dst_ltm", "ct_src_ltm", "ct_src_dport_ltm",
+            "ct_dst_sport_ltm", "ct_dst_src_ltm", "attack_cat", "label"
+        ]
+        header = ",".join(raw_headers)
+        r1 = "59.166.0.0,1390,149.171.126.0,53,udp,CON,0.001055,132,164,31,29,0,0,dns,500473.9375,621800.9375,2,2,0,0,0,0,66,82,0,0,0,0,1421927414,1421927414,0.017,0.013,0,0,0,0,0,0,0,0,3,7,1,3,1,1,1,Normal,0"
+        r2 = "175.45.176.0,21,149.171.126.1,21,tcp,FIN,0.927108,1540,268,254,252,2,1,ftp,12028.7998,1976.037227,16,4,255,255,624281827,3778197574,96,67,0,0,4.285856,1.433918,1421927415,1421927416,56.5744,267.432667,0.000802,0.000569,0.000233,0,1,0,1,1,1,2,2,1,1,1,1,Backdoor,1"
+        r3 = "175.45.176.3,80,149.171.126.2,80,tcp,FIN,0.451200,1240,3200,64,60,1,1,http,21985.8,56737.5,10,8,255,255,2147483647,2147483647,124,400,1,250,1.25,0.85,1421927420,1421927421,12.5,15.2,0.0012,0.0008,0.0004,0,0,1,0,0,3,3,2,1,1,1,1,Exploits,1"
+        return f"{header}\n{r1}\n{r2}\n{r3}\n"
+
     elif "unsw" in t:
-        # Valid UNSW-NB15 sample CSV
+        # Valid UNSW-NB15 training-set sample CSV (45 columns)
         cols = [
-            "dur", "proto", "service", "state", "spkts", "dpkts", "sbytes", "dbytes",
-            "rate", "sttl", "dttl", "sload", "dload", "sloss", "dloss", "ct_srv_src",
-            "ct_state_ttl", "ct_dst_ltm", "ct_src_dport_ltm", "ct_dst_sport_ltm",
-            "ct_dst_src_ltm", "is_ftp_login", "is_sm_ips_ports", "attack_cat", "label"
+            "id", "dur", "proto", "service", "state", "spkts", "dpkts", "sbytes", "dbytes",
+            "rate", "sttl", "dttl", "sload", "dload", "sloss", "dloss", "sinpkt", "dinpkt",
+            "sjit", "djit", "swin", "stcpb", "dtcpb", "dwin", "tcprtt", "synack", "ackdat",
+            "smean", "dmean", "trans_depth", "response_body_len", "ct_srv_src", "ct_state_ttl",
+            "ct_dst_ltm", "ct_src_dport_ltm", "ct_dst_sport_ltm", "ct_dst_src_ltm", "is_ftp_login",
+            "ct_ftp_cmd", "ct_flw_http_mthd", "ct_src_ltm", "ct_srv_dst", "is_sm_ips_ports",
+            "attack_cat", "label"
         ]
         header = ",".join(cols)
-        r1 = "0.121478,tcp,http,FIN,6,4,258,172,74.087,252,254,14158.9,9448.6,0,0,1,0,1,1,1,1,0,0,Normal,0"
-        r2 = "0.000008,udp,dns,INT,2,0,114,0,125000.0,254,0,57000000.0,0.0,0,0,2,0,2,2,2,2,0,0,Generic,1"
-        r3 = "0.451200,tcp,smtp,CON,10,8,1240,3200,39.89,64,60,21985.8,56737.5,1,1,3,0,2,1,1,1,0,0,Normal,0"
+        r1 = "1,0.121478,tcp,http,FIN,6,4,258,172,74.087,252,254,14158.9,9448.6,0,0,24.2956,8.512,1.39,0.58,255,624281827,3778197574,255,0.0008,0.0005,0.0003,43,43,0,0,1,0,1,1,1,1,0,0,0,1,1,0,Normal,0"
+        r2 = "2,0.000008,udp,dns,INT,2,0,114,0,125000.0,254,0,57000000.0,0.0,0,0,0.008,0,0,0,0,0,0,0,0,0,0,57,0,0,0,2,0,2,2,2,2,0,0,0,2,2,0,Generic,1"
+        r3 = "3,0.451200,tcp,smtp,CON,10,8,1240,3200,39.89,64,60,21985.8,56737.5,1,1,45.12,56.4,12.5,8.2,255,1024,2048,255,0.001,0.0006,0.0004,124,400,0,0,3,0,2,1,1,1,0,0,0,1,3,0,Normal,0"
         return f"{header}\n{r1}\n{r2}\n{r3}\n"
 
     else:
         # Invalid / Unrecognized schema for error testing
         return "customer_id,transaction_amount,merchant_category,country,is_fraud\n1001,45.50,groceries,US,0\n1002,1250.00,electronics,CA,1\n"
+

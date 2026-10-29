@@ -356,7 +356,7 @@ export function useSentinelWS() {
       .catch(() => { /* silent — default false */ });
 
     // Fetch initial pending events from DB so live feed is immediately populated
-    fetch(`${API_BASE}/events/pending`)
+    authedFetch(`${API_BASE}/events/pending`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.events) && data.events.length > 0) {

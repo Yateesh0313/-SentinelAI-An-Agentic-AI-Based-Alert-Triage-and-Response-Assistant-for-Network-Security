@@ -62,6 +62,7 @@ desktop.ini
 !ml/data/processed/encoder.joblib
 !ml/results/classical_baseline_model.joblib
 !ml/results/pca_transform.joblib
+!ml/results/unsw_nb15_xgb.joblib
 
 *.npy
 !ml/results/quantum_weights.npy

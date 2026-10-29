@@ -26,6 +26,7 @@ if _backend_dir not in sys.path:
 
 from dataset_adapter import (
     NSL_KDD_FEATURE_COLS,
+    UNSW_SHARED_FEATURES,
     CATEGORICAL_COLS,
     NUMERIC_COLS,
     SchemaDetectionError,
@@ -88,7 +89,7 @@ def test_detect_schema_cicids2017():
 
 
 def test_detect_schema_unsw_nb15():
-    """UNSW-NB15 with standard Argus/Bro headers is detected."""
+    """UNSW-NB15 with standard Argus/Bro training headers is detected."""
     unsw_cols = [
         "dur", "proto", "service", "state", "spkts", "dpkts", "sbytes", "dbytes",
         "rate", "sttl", "dttl", "sload", "dload", "sloss", "dloss", "ct_srv_src",
@@ -97,8 +98,26 @@ def test_detect_schema_unsw_nb15():
     ]
     result = detect_schema(unsw_cols)
     assert result.schema_name == "UNSW-NB15"
-    assert "Detected format: UNSW-NB15" in result.format_display
+    assert "Detected: UNSW-NB15" in result.format_display
     assert result.matched_columns_count >= 20
+
+
+def test_detect_schema_unsw_nb15_full_file():
+    """UNSW-NB15 with 49-column full file headers is detected case-insensitively."""
+    full_cols = [
+        "srcip", "sport", "dstip", "dsport", "proto", "state", "dur", "sbytes", "dbytes",
+        "sttl", "dttl", "sloss", "dloss", "service", "Sload", "Dload", "Spkts", "Dpkts",
+        "swin", "dwin", "stcpb", "dtcpb", "smeansz", "dmeansz", "trans_depth",
+        "res_bdy_len", "Sjit", "Djit", "Stime", "Ltime", "Sintpkt", "Dintpkt",
+        "tcprtt", "synack", "ackdat", "is_sm_ips_ports", "ct_state_ttl", "ct_flw_http_mthd",
+        "is_ftp_login", "ct_ftp_cmd", "ct_srv_src", "ct_srv_dst", "ct_dst_ltm",
+        "ct_src_ltm", "ct_src_dport_ltm", "ct_dst_sport_ltm", "ct_dst_src_ltm",
+        "attack_cat", "label",
+    ]
+    result = detect_schema(full_cols)
+    assert result.schema_name == "UNSW-NB15"
+    assert result.format_display == "Detected: UNSW-NB15 (full-file layout) → unsw_nb15_xgb"
+    assert result.layout == "full"
 
 
 def test_detect_schema_invalid_strict():
@@ -130,22 +149,28 @@ def test_feature_mapping_conforms_to_41_cols():
         mapped_res = process_csv_upload(raw_csv.encode(), max_rows=10)
 
         assert len(mapped_res.df_mapped.columns) == 41
-        assert list(mapped_res.df_mapped.columns) == NSL_KDD_FEATURE_COLS
         assert mapped_res.total_rows > 0
 
-        # Verify categorical columns are non-empty strings
-        for cat_col in CATEGORICAL_COLS:
-            vals = mapped_res.df_mapped[cat_col].tolist()
-            assert all(isinstance(v, str) and len(v) > 0 for v in vals)
-
-        # Verify numeric columns contain valid floats
-        for num_col in NUMERIC_COLS:
-            vals = mapped_res.df_mapped[num_col].tolist()
-            assert all(isinstance(v, (int, float)) for v in vals)
+        if template == "unsw":
+            assert list(mapped_res.df_mapped.columns) == UNSW_SHARED_FEATURES
+            for cat_col in ["proto", "service", "state"]:
+                vals = mapped_res.df_mapped[cat_col].tolist()
+                assert all(isinstance(v, str) and len(v) > 0 for v in vals)
+            for num_col in [c for c in UNSW_SHARED_FEATURES if c not in ("proto", "service", "state")]:
+                vals = mapped_res.df_mapped[num_col].tolist()
+                assert all(isinstance(v, (int, float)) for v in vals)
+        else:
+            assert list(mapped_res.df_mapped.columns) == NSL_KDD_FEATURE_COLS
+            for cat_col in CATEGORICAL_COLS:
+                vals = mapped_res.df_mapped[cat_col].tolist()
+                assert all(isinstance(v, str) and len(v) > 0 for v in vals)
+            for num_col in NUMERIC_COLS:
+                vals = mapped_res.df_mapped[num_col].tolist()
+                assert all(isinstance(v, (int, float)) for v in vals)
 
         # Verify tracking lists
         assert len(mapped_res.columns_matched) > 0
-        if template != "nsl":
+        if template == "cic":
             assert len(mapped_res.columns_defaulted) > 0
 
 
@@ -206,8 +231,8 @@ def test_fastapi_upload_unsw_nb15(client):
 
     assert data["status"] == "success"
     assert data["schema"] == "UNSW-NB15"
-    assert "Detected format: UNSW-NB15" in data["format_display"]
-    assert data["model_used"] == "Random Forest"
+    assert "Detected: UNSW-NB15" in data["format_display"]
+    assert data["model_used"] == "unsw_nb15_xgb"
     assert data["processed_rows"] == 3
 
 

@@ -69,11 +69,13 @@ from auth import (
     LoginRequest,
     RegisterRequest,
     get_current_user,
+    get_optional_user,
     login_user,
     register_user,
     require_role,
     validate_ws_token,
 )
+from enrichment import generate_simulated_ip
 
 # Add agents/ to sys.path so we can import the pipeline
 _PROJECT_ROOT_EARLY = Path(__file__).resolve().parent.parent
@@ -130,16 +132,19 @@ _model: Any = None
 _model_rf: Any = None
 _scaler: Any = None
 _encoder: Any = None
+_model_unsw: Any = None
+_unsw_features: list[str] = []
 
 
 def _load_artifacts() -> None:
     """Load the trained model and preprocessing objects into module globals."""
-    global _model, _model_rf, _scaler, _encoder
+    global _model, _model_rf, _scaler, _encoder, _model_unsw, _unsw_features
 
     model_path = _RESULTS_DIR / "classical_baseline_model.joblib"
     rf_path = _RESULTS_DIR / "classical_rf_model.joblib"
     scaler_path = _PROCESSED_DIR / "scaler.joblib"
     encoder_path = _PROCESSED_DIR / "encoder.joblib"
+    unsw_path = _RESULTS_DIR / "unsw_nb15_xgb.joblib"
 
     for p in [model_path, scaler_path, encoder_path]:
         if not p.exists():
@@ -158,6 +163,16 @@ def _load_artifacts() -> None:
         print(f"  [startup] Loaded model (RF)      : {rf_path.name}")
     print(f"  [startup] Loaded scaler          : {scaler_path.name}")
     print(f"  [startup] Loaded encoder         : {encoder_path.name}")
+
+    if unsw_path.exists():
+        try:
+            unsw_data = joblib.load(unsw_path)
+            _model_unsw = unsw_data.get("pipeline")
+            _unsw_features = unsw_data.get("shared_features", [])
+            print(f"  [startup] Loaded model (UNSW XGB): {unsw_path.name} ({len(_unsw_features)} features)")
+        except Exception as exc:
+            print(f"  [startup] WARNING: Failed to load unsw_nb15_xgb: {exc}")
+
 
 
 # ---------------------------------------------------------------------------
@@ -832,6 +847,15 @@ async def _replay_loop() -> None:
         else:
             message["event_id"] = None
             message["status"] = None
+            try:
+                from pipeline import heuristic_triage
+                fb = heuristic_triage(payload)
+                message["triage"] = fb["triage"]
+                message["severity"] = fb["severity"]
+                message["severity_justification"] = fb["severity_justification"]
+                message["recommended_action"] = fb["recommended_action"]
+            except Exception:
+                pass
             # Log every 10th normal event
             if idx % 10 == 0:
                 n_clients = len(_ws_clients)
@@ -2054,20 +2078,44 @@ async def dataset_upload(
     triaged_count = 0
     alerts_generated: list[dict] = []
 
-    model_label = "Random Forest" if model_type.lower() in ("rf", "random_forest") else "XGBoost"
+    is_unsw = getattr(mapped_result, "model_target", "") == "unsw_nb15_xgb"
+    if is_unsw:
+        model_label = "unsw_nb15_xgb"
+    else:
+        model_label = "Random Forest" if model_type.lower() in ("rf", "random_forest") else "XGBoost"
+
+    display_df = getattr(mapped_result, "display_df", None)
 
     for idx, row in mapped_result.df_mapped.iterrows():
         row_dict = row.to_dict()
-        event = NetworkEvent(**row_dict)
+        display_row = display_df.iloc[idx].to_dict() if display_df is not None else {}
+        srcip = display_row.get("srcip")
+        dstip = display_row.get("dstip")
+        sport = display_row.get("sport")
+        dsport = display_row.get("dsport")
+        attack_cat = display_row.get("attack_cat") or "Normal"
 
         # 1. Inference
-        try:
-            prediction, confidence = run_inference(event, model_type=model_type)
-        except Exception as exc:
-            prediction = "error"
-            confidence = 0.0
+        if is_unsw and _model_unsw is not None:
+            try:
+                row_df = pd.DataFrame([row_dict])
+                pred = int(_model_unsw.predict(row_df)[0])
+                prediction = "anomaly" if pred == 1 else "normal"
+                proba = _model_unsw.predict_proba(row_df)[0]
+                confidence = float(proba[pred])
+            except Exception as exc:
+                logger.error("UNSW inference error at row %d: %s", idx, exc)
+                prediction = "error"
+                confidence = 0.0
+        else:
+            try:
+                event = NetworkEvent(**row_dict)
+                prediction, confidence = run_inference(event, model_type=model_type)
+            except Exception as exc:
+                prediction = "error"
+                confidence = 0.0
 
-        # 2. YARA Signature Matching
+        # 2. Signature & Anomaly Flagging
         sig_matches = match_signatures(row_dict)
         ml_flagged = prediction == "anomaly"
         sig_flagged = len(sig_matches) > 0
@@ -2081,6 +2129,11 @@ async def dataset_upload(
         message: dict[str, Any] = {
             "event_index": idx,
             "raw_event": row_dict,
+            "source_ip": str(srcip) if (srcip and pd.notna(srcip)) else None,
+            "destination_ip": str(dstip) if (dstip and pd.notna(dstip)) else None,
+            "source_port": sport if (sport and pd.notna(sport)) else None,
+            "destination_port": dsport if (dsport and pd.notna(dsport)) else None,
+            "attack_category": attack_cat,
             "prediction": prediction,
             "confidence": confidence,
             "source": "dataset_upload",
@@ -2094,67 +2147,60 @@ async def dataset_upload(
 
         if should_triage:
             triaged_count += 1
+            real_ip_arg = str(srcip).strip() if (srcip and pd.notna(srcip)) else None
+            ip_val = real_ip_arg or generate_simulated_ip(row_dict)
+            if not message["source_ip"]:
+                message["source_ip"] = ip_val
+            message["ip_enrichment"] = {
+                "ip": message["source_ip"],
+                "ip_type": "real" if real_ip_arg else "simulated",
+                "reputation": {"score": 0, "verdict": "batch_ingested", "source": "local_ingest"},
+                "geolocation": {"country": "Unknown", "city": "Unknown", "source": "local_ingest"},
+            }
+
+            triage_ctx = row_dict.copy()
+            if attack_cat and attack_cat != "Normal":
+                triage_ctx["attack_category"] = attack_cat
+            if message.get("source_ip"):
+                triage_ctx["source_ip"] = message["source_ip"]
+
+            # Fast deterministic heuristic triage for batch dataset ingestion
             try:
-                # LLM agent triage
-                from pipeline import run_pipeline
-                agent_result = await asyncio.to_thread(run_pipeline, row_dict)
-                message["triage"] = agent_result.get("triage", "")
-                message["severity"] = agent_result.get("severity", "UNKNOWN")
-                message["severity_justification"] = agent_result.get("severity_justification", "")
-                message["recommended_action"] = agent_result.get("recommended_action", "flag_for_review")
-                message["attack_techniques"] = agent_result.get("attack_techniques", [])
-                message["agent_latency_seconds"] = agent_result.get("agent_latency_seconds", 0.0)
-
-                # IP enrichment
-                try:
-                    message["ip_enrichment"] = await enrich_ip(row_dict)
-                except Exception:
-                    message["ip_enrichment"] = None
-
-                # Risk scoring
-                risk = calculate_risk_score(message)
-                message["risk_score"] = risk["risk_score"]
-                message["risk_classification"] = risk["risk_classification"]
-                message["risk_signals"] = risk["risk_signals"]
-
-                # MongoDB persistence & ID
-                event_id = await _store_event(message.copy())
-                message["event_id"] = event_id
-                message["status"] = "pending_review"
-
+                from pipeline import heuristic_triage
+                fb = heuristic_triage(triage_ctx)
+                message["triage"] = fb.get("triage", "")
+                message["severity"] = fb.get("severity", "Medium")
+                message["severity_justification"] = fb.get("severity_justification", "")
+                message["recommended_action"] = fb.get("recommended_action", "flag_for_review")
             except Exception as exc:
-                # Heuristic fallback
-                try:
-                    from pipeline import heuristic_triage
-                    fb = heuristic_triage(row_dict)
-                    message["triage"] = fb["triage"]
-                    message["severity"] = fb["severity"]
-                    message["severity_justification"] = fb["severity_justification"]
-                    message["recommended_action"] = fb["recommended_action"]
-                except Exception:
-                    message["triage"] = "Anomalous traffic pattern detected from uploaded dataset."
-                    message["severity"] = "Medium"
-                    message["severity_justification"] = f"Fallback triage ({exc})"
-                    message["recommended_action"] = "flag_for_review"
+                msg_cat = f" {attack_cat}" if (attack_cat and attack_cat != "Normal") else ""
+                message["triage"] = f"Anomalous{msg_cat} network activity detected from uploaded dataset."
+                message["severity"] = "High" if attack_cat in ("Exploits", "Backdoors", "DoS", "Shellcode") else "Medium"
+                message["severity_justification"] = f"Heuristic alert for{msg_cat} network activity ({exc})"
+                message["recommended_action"] = "isolate_host" if attack_cat in ("Backdoors", "Exploits") else "flag_for_review"
 
-                message["attack_techniques"] = []
-                message["ip_enrichment"] = None
-                message["agent_latency_seconds"] = 0
-                risk = calculate_risk_score(message)
-                message["risk_score"] = risk["risk_score"]
-                message["risk_classification"] = risk["risk_classification"]
-                message["risk_signals"] = risk["risk_signals"]
-                event_id = await _store_event(message.copy())
-                message["event_id"] = event_id
-                message["status"] = "pending_review"
+            message["attack_techniques"] = []
+            message["agent_latency_seconds"] = 0.0
+            risk = calculate_risk_score(message)
+            message["risk_score"] = risk["risk_score"]
+            message["risk_classification"] = risk["risk_classification"]
+            message["risk_signals"] = risk["risk_signals"]
+            event_id = await _store_event(message.copy())
+            message["event_id"] = event_id
+            message["status"] = "pending_review"
 
             # Broadcast to WebSocket so live feed updates in real-time!
             await _broadcast(message)
 
-            if len(alerts_generated) < 25:
+            if len(alerts_generated) < 50:
                 alerts_generated.append({
                     "event_id": message.get("event_id"),
                     "row_index": idx,
+                    "source_ip": message.get("source_ip"),
+                    "destination_ip": message.get("destination_ip"),
+                    "source_port": message.get("source_port"),
+                    "destination_port": message.get("destination_port"),
+                    "attack_category": attack_cat,
                     "prediction": prediction,
                     "confidence": confidence,
                     "severity": message.get("severity"),

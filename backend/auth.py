@@ -123,6 +123,27 @@ async def get_current_user(token: str = Depends(_oauth2_scheme)) -> dict:
     return {"username": username, "role": payload.get("role", "analyst")}
 
 
+_oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+
+async def get_optional_user(token: str | None = Depends(_oauth2_scheme_optional)) -> dict | None:
+    """FastAPI dependency for endpoints that work with or without a logged-in user.
+
+    Returns user payload if a valid token was supplied, else None without raising 401.
+    """
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            return None
+        return {"username": username, "role": payload.get("role", "viewer")}
+    except Exception:
+        return None
+
+
+
 def require_role(minimum_role: str):
     """Factory that returns a FastAPI dependency enforcing a minimum role.
 

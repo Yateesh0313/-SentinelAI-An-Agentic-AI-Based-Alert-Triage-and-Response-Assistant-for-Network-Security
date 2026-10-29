@@ -9,6 +9,11 @@ const API_BASE = "http://localhost:8000";
 interface UploadAlertSummary {
   event_id: string | null;
   row_index: number;
+  source_ip?: string | null;
+  destination_ip?: string | null;
+  source_port?: number | string | null;
+  destination_port?: number | string | null;
+  attack_category?: string | null;
   prediction: string;
   confidence: number;
   severity?: string | null;
@@ -41,7 +46,10 @@ interface TemplateEvaluation {
 }
 
 interface UploadErrorResponse {
-  error: string;
+  error?: string;
+  error_type?: string;
+  status_code?: number;
+  title?: string;
   message?: string;
   detail?: string;
   uploaded_column_count?: number;
@@ -119,22 +127,82 @@ export function DatasetUploadView({
     formData.append("model_type", modelType);
     formData.append("max_rows", maxRows.toString());
 
+    // Extract JWT token from client storage
+    const token = typeof window !== "undefined" ? localStorage.getItem("sentinel_token") : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    // CRITICAL REQUIREMENT A: Do NOT set Content-Type header manually for FormData!
+    // The browser automatically sets Content-Type: multipart/form-data; boundary=...
+
     try {
       const res = await fetch(`${API_BASE}/dataset/upload`, {
         method: "POST",
+        headers,
         body: formData,
       });
 
-      const data = await res.json();
       if (!res.ok) {
-        setErrorResult(data);
+        let errData: any = {};
+        try {
+          errData = await res.json();
+        } catch {
+          errData = { detail: res.statusText || "Request failed" };
+        }
+
+        // Distinct error messages for 401, 403, 413, and schema mismatch (400)
+        if (res.status === 401) {
+          setErrorResult({
+            status_code: 401,
+            error_type: "auth_required",
+            title: "Authentication Required (401 Unauthorized)",
+            message: "Not authenticated. Please log in with an Analyst or Admin account to upload datasets.",
+            detail: errData.detail || "Authentication token was missing, invalid, or expired.",
+          });
+        } else if (res.status === 403) {
+          setErrorResult({
+            status_code: 403,
+            error_type: "forbidden",
+            title: "Access Forbidden (403 Insufficient Privileges)",
+            message: "Your current account role does not have permission to upload datasets. Minimum required role: Analyst.",
+            detail: errData.detail || "Insufficient permissions.",
+          });
+        } else if (res.status === 413) {
+          setErrorResult({
+            status_code: 413,
+            error_type: "file_too_large",
+            title: "File Too Large (413 Payload Too Large)",
+            message: errData.detail || "The uploaded CSV file exceeds the 50 MB maximum size limit.",
+            detail: errData.detail,
+          });
+        } else if (res.status === 400 && errData.error === "schema_detection_failed") {
+          setErrorResult({
+            status_code: 400,
+            error_type: "schema_mismatch",
+            title: "Schema Detection Error: Unrecognized Format",
+            message: errData.message || "Uploaded CSV does not match any recognized NIDS template.",
+            ...errData,
+          });
+        } else {
+          setErrorResult({
+            status_code: res.status,
+            error_type: "validation_error",
+            title: `Upload Error (${res.status})`,
+            message: errData.detail || errData.message || "Failed to process the uploaded dataset.",
+            ...errData,
+          });
+        }
       } else {
+        const data = await res.json();
         setResult(data);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Network error";
       setErrorResult({
         error: "network_error",
+        error_type: "network_error",
+        title: "Network Connection Error",
         detail: `Failed to connect to backend server: ${msg}`,
       });
     } finally {
@@ -160,6 +228,7 @@ export function DatasetUploadView({
       const msg = err instanceof Error ? err.message : "Failed to load sample";
       setErrorResult({
         error: "sample_load_failed",
+        title: "Sample Load Failed",
         detail: msg,
       });
       setLoading(false);
@@ -195,7 +264,7 @@ export function DatasetUploadView({
           <CardDescription className="text-slate-600 text-xs mt-1 leading-relaxed">
             Upload raw CSV files from standard Network Intrusion Detection benchmarks (<strong>NSL-KDD</strong>,{" "}
             <strong>CICIDS2017</strong>, or <strong>UNSW-NB15</strong>). SentinelAI automatically verifies the schema
-            without guessing, maps all attributes to the model&apos;s 41-feature feature space, and streams flagged alerts
+            without guessing, maps all attributes to the model&apos;s feature space, and streams flagged alerts
             directly into the live agent triage pipeline.
           </CardDescription>
         </CardHeader>
@@ -224,11 +293,22 @@ export function DatasetUploadView({
             <Button
               size="xs"
               variant="outline"
+              onClick={() => handleTestSample("unsw_full")}
+              disabled={loading}
+              className="bg-white hover:bg-purple-50 text-purple-800 border-purple-200 font-medium text-xs"
+              title="UNSW-NB15 raw full-file layout with srcip, dstip, sport, dsport (49 columns)"
+            >
+              {loadingSample === "unsw_full" ? "Testing…" : "UNSW-NB15 (Full File 49-Col)"}
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
               onClick={() => handleTestSample("unsw")}
               disabled={loading}
               className="bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-200 font-medium text-xs"
+              title="UNSW-NB15 standardized training/testing set (45 columns)"
             >
-              {loadingSample === "unsw" ? "Testing…" : "UNSW-NB15 (Argus/Bro)"}
+              {loadingSample === "unsw" ? "Testing…" : "UNSW-NB15 (Training Set 45-Col)"}
             </Button>
             <Button
               size="xs"
@@ -394,23 +474,55 @@ export function DatasetUploadView({
         </CardContent>
       </Card>
 
-      {/* ERROR FEEDBACK BANNER (Requirement 4: Strict failure without guessing) */}
+      {/* ERROR FEEDBACK BANNER (Requirement A: Distinct messages for 401, 403, 413, and schema mismatch) */}
       {errorResult && (
         <Card className="border-red-200 bg-red-50/40">
           <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-xs font-bold">
-                ✕
-              </span>
-              <CardTitle className="text-sm font-bold text-red-800">
-                Schema Detection Error: Unrecognized Format
-              </CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-xs font-bold">
+                  ✕
+                </span>
+                <CardTitle className="text-sm font-bold text-red-800">
+                  {errorResult.title || "Dataset Processing Error"}
+                </CardTitle>
+              </div>
+              {errorResult.status_code === 401 && (
+                <Button
+                  size="xs"
+                  onClick={() => window.location.href = "/login"}
+                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+                >
+                  Go to Login &rarr;
+                </Button>
+              )}
             </div>
             <CardDescription className="text-xs text-red-700 mt-1">
-              {errorResult.message || errorResult.detail || "Uploaded CSV does not match any recognized NIDS template."}
+              {errorResult.message || errorResult.detail || "An error occurred during dataset processing."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 pt-1">
+            {errorResult.error_type === "auth_required" && (
+              <div className="p-3 bg-white rounded border border-red-200 text-xs text-slate-700 space-y-1.5">
+                <p className="font-semibold text-red-800">Role-Based Access Control (RBAC):</p>
+                <p>Dataset ingestion requires Analyst or Admin credentials. If your session has expired, please log back in to SentinelAI to proceed.</p>
+              </div>
+            )}
+
+            {errorResult.error_type === "forbidden" && (
+              <div className="p-3 bg-white rounded border border-red-200 text-xs text-slate-700 space-y-1.5">
+                <p className="font-semibold text-red-800">Insufficient Privileges:</p>
+                <p>Viewer accounts cannot upload datasets or trigger automated triage runs. Please switch to an Analyst or Admin account.</p>
+              </div>
+            )}
+
+            {errorResult.error_type === "file_too_large" && (
+              <div className="p-3 bg-white rounded border border-red-200 text-xs text-slate-700 space-y-1.5">
+                <p className="font-semibold text-red-800">File Exceeds Size Limit:</p>
+                <p>The maximum upload file size is <strong>50 MB</strong>. For larger benchmark datasets, please split the file or use the Max Ingestion Rows selector.</p>
+              </div>
+            )}
+
             {errorResult.templates_evaluated && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                 {/* NSL-KDD Check */}
@@ -631,6 +743,7 @@ export function DatasetUploadView({
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50/75 text-slate-600 font-semibold">
                         <th className="py-2 px-3">Row</th>
+                        <th className="py-2 px-3">Source IP</th>
                         <th className="py-2 px-3">Prediction</th>
                         <th className="py-2 px-3">Confidence</th>
                         <th className="py-2 px-3">Severity</th>
@@ -652,6 +765,12 @@ export function DatasetUploadView({
                         return (
                           <tr key={alert.event_id || idx} className="hover:bg-slate-50/50 transition-colors">
                             <td className="py-2.5 px-3 font-mono text-slate-500">#{alert.row_index}</td>
+                            <td className="py-2.5 px-3 font-mono text-slate-700 font-semibold text-[0.72rem]">
+                              {alert.source_ip || "—"}
+                              {alert.source_port ? (
+                                <span className="text-slate-400 font-normal">:{alert.source_port}</span>
+                              ) : null}
+                            </td>
                             <td className="py-2.5 px-3">
                               <span className="px-2 py-0.5 rounded-full text-[0.65rem] font-semibold uppercase bg-red-50 text-red-700 border border-red-200">
                                 {alert.prediction}
