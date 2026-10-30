@@ -144,6 +144,7 @@ export interface SentinelEvent {
   risk_score?: number | null;
   risk_classification?: string | null;
   risk_signals?: Record<string, unknown> | null;
+  ml_confidence_note?: string;
 }
 
 interface StatusUpdate {

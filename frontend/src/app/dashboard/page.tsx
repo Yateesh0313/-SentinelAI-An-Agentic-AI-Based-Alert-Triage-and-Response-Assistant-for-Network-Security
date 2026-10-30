@@ -19,6 +19,12 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { DatasetUploadView } from "@/components/dataset-upload-view";
+import dynamic from "next/dynamic";
+
+const GlobeScene = dynamic(
+  () => import("@/components/three/GlobeScene"),
+  { ssr: false, loading: () => <div className="w-full h-48 rounded-xl skeleton" /> }
+);
 
 const API_BASE = "http://localhost:8000";
 
@@ -212,23 +218,24 @@ function CaptureStatusBar({
             HONEYPOT :8899
           </span>
         )}
-        {suricataRunning && (
-          <span
-            className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-50 text-cyan-800 border border-cyan-200 shadow-sm"
-            title={`Suricata IDS active on ${suricataStatus?.interface || activeInterface || "interface"} — ${suricataStatus?.events_per_minute ?? 0} evt/min, ${suricataStatus?.alerts ?? 0} alerts total`}
-          >
-            <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
-            <span>SURICATA IDS</span>
-            {suricataStatus?.interface && (
-              <span className="font-mono text-[0.7rem] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded border border-cyan-200">
-                {suricataStatus.interface}
-              </span>
-            )}
-            <span className="text-cyan-700 text-[0.7rem] font-medium">
-              {suricataStatus?.events_per_minute !== undefined ? `${suricataStatus.events_per_minute} evt/min` : "active"}
-            </span>
+        {/* Live-capture / Suricata status chip (interface, running/stopped, evt/min) */}
+        <span
+          className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold border shadow-sm ${
+            suricataRunning
+              ? "bg-cyan-50 text-cyan-800 border-cyan-200"
+              : "bg-slate-50 text-slate-600 border-slate-200"
+          }`}
+          title={`Suricata IDS ${suricataRunning ? "running" : "stopped"} on ${suricataStatus?.interface || activeInterface || "interface"} — ${suricataStatus?.events_per_minute ?? 0} evt/min, ${suricataStatus?.alerts ?? 0} alerts total`}
+        >
+          <span className={`w-2 h-2 rounded-full ${suricataRunning ? "bg-cyan-500 animate-pulse" : "bg-slate-400"}`} />
+          <span>Suricata: {suricataRunning ? "Running" : "Stopped"}</span>
+          <span className="font-mono text-[0.7rem] bg-white/80 px-1.5 py-0.5 rounded border border-slate-200">
+            {suricataStatus?.interface || activeInterface || "eth0"}
           </span>
-        )}
+          <span className="text-[0.7rem] font-medium opacity-80">
+            {suricataStatus?.events_per_minute ?? 0} evt/min
+          </span>
+        </span>
         {liveCaptureRunning && (
           <span
             className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200 shadow-sm"
@@ -774,6 +781,26 @@ function EventCard({
             )}
           </div>
         </div>
+
+        {/* Prominent Plain-English Explanation */}
+        {event.triage && (
+          <div className="mt-3 p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 text-xs sm:text-sm leading-relaxed">
+            <div className="flex items-start gap-2">
+              <span className="text-[0.62rem] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded shrink-0 mt-0.5">
+                AI Triage
+              </span>
+              <p className="text-slate-800 font-medium">
+                {event.triage}
+              </p>
+            </div>
+            {event.severity_justification && (
+              <p className="mt-1.5 text-xs text-slate-600 pl-2 border-l-2 border-indigo-200">
+                <span className="font-semibold text-slate-700">Justification: </span>
+                {event.severity_justification}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Risk score row */}
         {riskScore !== undefined && riskClass && (
@@ -1502,7 +1529,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f3f4f8]">
+    <div className="min-h-screen bg-gradient-to-br from-[#F4F7FE] via-[#F0F9FF] to-[#F0FDF4] text-[#0B1B3A]">
 
       {/* Auth error banner */}
       {authError && (
@@ -1578,6 +1605,44 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* Threat Globe (lazy-loaded) */}
+        {mounted && events.some(e => e.ip_enrichment?.geolocation?.lat) && (
+          <div className="mb-5 rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-bold text-slate-700">🌐 Global Threat Map</span>
+              <span className="text-[0.6rem] text-slate-400">Live GeoIP attack sources</span>
+            </div>
+            <div className="h-64 sm:h-80">
+              <GlobeScene
+                className="w-full h-full"
+                alerts={events
+                  .filter(e => e.ip_enrichment?.geolocation?.lat && e.ip_enrichment?.geolocation?.lon)
+                  .slice(0, 20)
+                  .map(e => ({
+                    lat: e.ip_enrichment!.geolocation.lat!,
+                    lon: e.ip_enrichment!.geolocation.lon!,
+                    label: e.ip_enrichment!.geolocation.country || e.ip_enrichment!.ip || "Unknown",
+                    severity: (e.severity as "Critical" | "High" | "Medium" | "Low") || undefined,
+                  }))
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {/* KPI Skeleton Row */}
+        {!mounted ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="stat-card accent-indigo p-4">
+                <div className="skeleton h-10 w-10 rounded-xl mb-3" />
+                <div className="skeleton h-7 w-20 mb-1" />
+                <div className="skeleton h-3 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {/* Capture Status Bar */}
         <CaptureStatusBar
@@ -1915,7 +1980,34 @@ export default function Home() {
             <StatsBar events={events} />
 
             {/* Event Feed */}
-            {events.length === 0 ? (
+            {wsStatus === "connecting" && events.length === 0 ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="p-4 rounded-xl border border-slate-200 bg-white shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div className="skeleton h-5 w-40" />
+                      <div className="skeleton h-5 w-20 rounded-full" />
+                    </div>
+                    <div className="skeleton h-12 w-full rounded-lg" />
+                    <div className="flex gap-2">
+                      <div className="skeleton h-6 w-24 rounded-full" />
+                      <div className="skeleton h-6 w-24 rounded-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : wsStatus === "failed" && events.length === 0 ? (
+              <div className="text-center py-16 rounded-2xl border border-dashed border-red-200 bg-red-50/30">
+                <div className="text-5xl mb-4">⚠️</div>
+                <h3 className="text-base font-bold text-red-700 mb-1">Connection Failed</h3>
+                <p className="text-red-500/70 text-sm max-w-sm mx-auto mb-4">
+                  Could not connect to the SentinelAI backend. Ensure the server is running on port 8000.
+                </p>
+                <Button size="sm" variant="destructive" onClick={reconnect}>
+                  Retry Connection
+                </Button>
+              </div>
+            ) : events.length === 0 ? (
               <div className="text-center py-20 rounded-2xl border border-dashed border-slate-300 bg-white">
                 <div className="text-5xl mb-4">🛡️</div>
                 <h3 className="text-base font-bold text-slate-700 mb-1">No events yet</h3>

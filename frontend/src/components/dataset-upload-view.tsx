@@ -594,6 +594,39 @@ export function DatasetUploadView({
         </Card>
       )}
 
+      {/* Loading Skeleton State */}
+      {loading && (
+        <Card className="border-slate-200 bg-white">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="skeleton h-8 w-8 rounded-full" />
+              <div className="space-y-1.5 flex-1">
+                <div className="skeleton h-4 w-48" />
+                <div className="skeleton h-3 w-72" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              <div className="skeleton h-16 rounded-lg" />
+              <div className="skeleton h-16 rounded-lg" />
+              <div className="skeleton h-16 rounded-lg" />
+              <div className="skeleton h-16 rounded-lg" />
+            </div>
+            <div className="skeleton h-24 rounded-lg" />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {!result && !errorResult && !loading && (
+        <div className="text-center py-10 px-4 rounded-xl border border-dashed border-slate-200 bg-white/60">
+          <div className="text-3xl mb-2">📊</div>
+          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Awaiting Dataset</h4>
+          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+            Select a CSV file above or test an automated sample to view schema detection, triage analysis, and detected threat categories.
+          </p>
+        </div>
+      )}
+
       {/* SUCCESS RESULTS & DETECTED FORMAT BANNER (Requirement 6) */}
       {result && (
         <div className="space-y-6">

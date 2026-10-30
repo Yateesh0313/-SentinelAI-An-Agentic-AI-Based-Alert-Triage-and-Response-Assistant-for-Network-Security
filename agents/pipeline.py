@@ -504,16 +504,7 @@ def heuristic_triage(raw_event: dict, context: dict | None = None) -> dict:
         techniques = map_attack_techniques(raw_event, context=ctx)
         text_upper = (sig + " " + cat).upper()
 
-        if "SCAN" in text_upper or "LEAK" in text_upper or "DISCOVERY" in text_upper:
-            severity = suricata_sev if suricata_sev in ("Critical", "High", "Medium") else "Medium"
-            action = "flag_for_review"
-            justification = f"Suricata detected network scanning or reconnaissance probe: {sig} ({cat})."
-            triage_text = (
-                f"Suricata detected network scanning activity originating from {src_ip}:{src_port} targeting {dst_ip}:{dst_port} over {proto}. "
-                f"The alert '{sig}' in category '{cat}' indicates automated reconnaissance or vulnerability scanning attempting to discover exposed services. "
-                f"We recommend flagging this IP for analyst review and monitoring for follow-on exploitation."
-            )
-        elif "BRUTE" in text_upper or "AUTHENTICAT" in text_upper or "LOGIN" in text_upper:
+        if "BRUTE" in text_upper or "AUTHENTICAT" in text_upper or "LOGIN" in text_upper:
             severity = "Critical" if suricata_sev == "Critical" else "High"
             action = "block_ip"
             justification = f"Suricata detected credential brute-force attack: {sig} ({cat})."
@@ -521,6 +512,15 @@ def heuristic_triage(raw_event: dict, context: dict | None = None) -> dict:
                 f"Suricata detected an automated credential brute-force attempt from {src_ip}:{src_port} against {dst_ip}:{dst_port} over {proto}. "
                 f"The signature '{sig}' highlights repeated authentication guessing to gain unauthorized access. "
                 f"We recommend blocking the source IP immediately to prevent account compromise."
+            )
+        elif "SCAN" in text_upper or "LEAK" in text_upper or "DISCOVERY" in text_upper:
+            severity = suricata_sev if suricata_sev in ("Critical", "High", "Medium") else "Medium"
+            action = "flag_for_review"
+            justification = f"Suricata detected network scanning or reconnaissance probe: {sig} ({cat})."
+            triage_text = (
+                f"Suricata detected network scanning activity originating from {src_ip}:{src_port} targeting {dst_ip}:{dst_port} over {proto}. "
+                f"The alert '{sig}' in category '{cat}' indicates automated reconnaissance or vulnerability scanning attempting to discover exposed services. "
+                f"We recommend flagging this IP for analyst review and monitoring for follow-on exploitation."
             )
         elif "TROJAN" in text_upper or "MALWARE" in text_upper or "C2" in text_upper or "COMMAND AND CONTROL" in text_upper:
             severity = "Critical"

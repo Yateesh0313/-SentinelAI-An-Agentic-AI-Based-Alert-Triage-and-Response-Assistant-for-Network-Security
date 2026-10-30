@@ -153,7 +153,7 @@ function GlobeWireframe({ radius }: { radius: number }) {
 }
 
 // ── Rotating globe group ──────────────────────────────────────────────────
-function RotatingGlobe() {
+function RotatingGlobe({ alertSources }: { alertSources?: { lat: number; lng: number; label: string; color?: string }[] }) {
   const groupRef = useRef<THREE.Group>(null);
   const { viewport } = useThree();
 
@@ -204,6 +204,18 @@ function RotatingGlobe() {
         />
       ))}
 
+      {/* Real alert arcs from GeoIP */}
+      {alertSources?.map((src, i) => (
+        <AttackArc
+          key={`real-${i}`}
+          from={src}
+          to={TARGET}
+          radius={clampedRadius + 0.01}
+          color={src.color || "#EF4444"}
+          delay={0}
+        />
+      ))}
+
       {/* Protected node (target) */}
       <mesh position={latLngToVec3(TARGET.lat, TARGET.lng, clampedRadius + 0.02).toArray()}>
         <sphereGeometry args={[0.04, 16, 16]} />
@@ -214,7 +226,14 @@ function RotatingGlobe() {
 }
 
 // ── Exported Globe Scene ──────────────────────────────────────────────────
-export default function GlobeScene({ className }: { className?: string }) {
+export interface GlobeAlert {
+  lat: number;
+  lon: number;
+  label: string;
+  severity?: "Critical" | "High" | "Medium" | "Low";
+}
+
+export default function GlobeScene({ className, alerts }: { className?: string; alerts?: GlobeAlert[] }) {
   const [visible, setVisible] = useState(true);
 
   // Pause when tab is hidden
@@ -234,11 +253,27 @@ export default function GlobeScene({ className }: { className?: string }) {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  if (reducedMotion) {
+  // Low-power device fallback
+  const [isLowPower, setIsLowPower] = useState(false);
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      const cores = navigator.hardwareConcurrency;
+      const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory;
+      if ((cores && cores <= 4) || (mem && mem <= 4)) {
+        setIsLowPower(true);
+      }
+    }
+  }, []);
+
+  if (reducedMotion || isLowPower) {
     return (
       <div className={`${className ?? ""} flex items-center justify-center`}>
-        <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-100 to-cyan-50 border border-indigo-200/50 flex items-center justify-center">
-          <div className="text-indigo-400 text-sm font-medium">🌐 Global Threat Map</div>
+        <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-100 to-cyan-50 border border-indigo-200/50 flex flex-col items-center justify-center p-4 text-center">
+          <div className="text-2xl mb-1">🌐</div>
+          <div className="text-indigo-600 text-sm font-bold">Global Threat Map</div>
+          <div className="text-slate-400 text-xs mt-1">
+            {alerts && alerts.length > 0 ? `${alerts.length} active threat sources` : "Monitoring global ingress"}
+          </div>
         </div>
       </div>
     );
@@ -247,7 +282,7 @@ export default function GlobeScene({ className }: { className?: string }) {
   return (
     <div className={className}>
       <Canvas
-        dpr={Math.min(window.devicePixelRatio, 2)}
+        dpr={typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1}
         camera={{ position: [0, 0, 4.5], fov: 45 }}
         frameloop={visible ? "always" : "never"}
         style={{ background: "transparent" }}
@@ -256,7 +291,12 @@ export default function GlobeScene({ className }: { className?: string }) {
         <directionalLight position={[5, 5, 5]} intensity={0.4} />
         <pointLight position={[-3, 2, 4]} intensity={0.3} color="#06B6D4" />
 
-        <RotatingGlobe />
+        <RotatingGlobe alertSources={alerts?.map(a => ({
+          lat: ((90 - a.lat) * Math.PI) / 180,
+          lng: (a.lon * Math.PI) / 180,
+          label: a.label,
+          color: a.severity === "Critical" ? "#EF4444" : a.severity === "High" ? "#F97316" : a.severity === "Medium" ? "#F59E0B" : "#06B6D4",
+        }))} />
 
         <OrbitControls
           enableZoom={false}

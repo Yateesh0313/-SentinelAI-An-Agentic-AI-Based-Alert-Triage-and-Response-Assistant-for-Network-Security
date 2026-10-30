@@ -353,3 +353,34 @@ def test_expired_token_returns_401(client):
     )
     resp = client.get("/events/pending", headers=_auth(expired_token))
     assert resp.status_code == 401
+
+
+# ===========================================================================
+# Test 15: POST /auth/register creates a user with role "viewer"
+# ===========================================================================
+
+def test_register_creates_viewer_role(client):
+    """POST /auth/register must assign role 'viewer' to new users."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    import auth
+
+    with patch.object(auth, "db") as mock_db:
+        fake_users = AsyncMock()
+        fake_users.find_one = AsyncMock(return_value=None)
+        fake_users.insert_one = AsyncMock()
+        mock_get_db = MagicMock()
+        mock_get_db.users = fake_users
+        mock_db._get_db.return_value = mock_get_db
+
+        resp = client.post("/auth/register", json={
+            "username": "test_rbac_viewer_user",
+            "password": "TestPassword123!"
+        })
+
+    assert resp.status_code in (200, 201), f"Status {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body.get("role") == "viewer", f"Expected role 'viewer', got {body}"
+    if fake_users.insert_one.called:
+        doc = fake_users.insert_one.call_args[0][0]
+        assert doc.get("role") == "viewer"
+
