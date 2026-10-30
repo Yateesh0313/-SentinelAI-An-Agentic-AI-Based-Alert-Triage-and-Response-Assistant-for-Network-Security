@@ -277,8 +277,8 @@ SentinelAI enforces role hierarchy across all API endpoints:
 | **Analyst** | All Viewer privileges + Dataset Upload, Replay Controls, Alert Triage, Approve/Reject Actions. |
 | **Admin** | All Analyst privileges + CSV Security Audit Logs, User Role Management, System Diagnostics. |
 
-### Demo Data Seeding
-To populate demo accounts and sample alerts, run `scripts/seed_demo.py`.
+### User Management & Demo Data Seeding
+To create user accounts, run `scripts/create_user.py <username> <password> <viewer|analyst|admin>`. To populate sample alerts, run `scripts/seed_demo.py`.
 
 ---
 
