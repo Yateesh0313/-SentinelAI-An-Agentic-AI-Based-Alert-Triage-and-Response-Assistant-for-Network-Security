@@ -767,6 +767,11 @@ function EventCard({
             <span className="text-[0.65rem] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
               {(event.confidence * 100).toFixed(0)}%
             </span>
+            {event.ml_confidence_note && (
+              <span className="text-[0.6rem] font-medium text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                ⚠ {event.ml_confidence_note}
+              </span>
+            )}
           </div>
         </div>
 

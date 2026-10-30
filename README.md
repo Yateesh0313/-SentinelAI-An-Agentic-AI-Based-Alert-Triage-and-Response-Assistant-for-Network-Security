@@ -277,12 +277,8 @@ SentinelAI enforces role hierarchy across all API endpoints:
 | **Analyst** | All Viewer privileges + Dataset Upload, Replay Controls, Alert Triage, Approve/Reject Actions. |
 | **Admin** | All Analyst privileges + CSV Security Audit Logs, User Role Management, System Diagnostics. |
 
-### Default Credentials (for Evaluation)
-| Role | Username | Password |
-|---|---|---|
-| **Admin** | `admin` | `Password123!` |
-| **Analyst** | `analyst` | `Password123!` |
-| **Viewer** | `viewer` | `Password123!` |
+### Demo Data Seeding
+To populate demo accounts and sample alerts, run `scripts/seed_demo.py`.
 
 ---
 
@@ -298,11 +294,11 @@ SentinelAI enforces role hierarchy across all API endpoints:
 | `GET` | `/dataset/sample/{template}` | Public | Downloads reference templates (`nsl`, `cic`, `unsw`, `unsw_full`) |
 | `GET` | `/events/pending` | **Authenticated** | Lists alerts awaiting SOC analyst action |
 | `GET` | `/events/history` | **Authenticated** | Retrieves resolved/audited events |
-| `POST` | `/approve/{event_id}` | **Analyst** | Approves recommended mitigation action |
-| `POST` | `/reject/{event_id}` | **Analyst** | Rejects alert as false positive |
+| `POST` | `/events/{id}/approve` | **Analyst** | Approves recommended mitigation action |
+| `POST` | `/events/{id}/reject` | **Analyst** | Rejects alert as false positive |
 | `GET` | `/logs/csv/list` | **Admin** | Lists security log files available for export |
 | `GET` | `/logs/download-csv` | **Admin** | Exports audit trail to CSV format |
-| `WS` | `/ws/alerts` | Public/JWT | Real-time WebSocket live alert stream |
+| `WS` | `/ws` | **Authenticated** | Real-time WebSocket live alert stream (token query param required) |
 
 ---
 

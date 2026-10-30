@@ -39,14 +39,20 @@ load_dotenv()
 
 _JWT_SECRET: str = os.getenv("JWT_SECRET", "")
 if not _JWT_SECRET:
-    import warnings
-    warnings.warn(
-        "JWT_SECRET is not set in backend/.env. Using an insecure default for "
-        "local development ONLY. Set JWT_SECRET to a random 64+ character hex "
-        "string before any real deployment.",
-        stacklevel=2,
-    )
-    _JWT_SECRET = "sentinelai-insecure-dev-only-default-jwt-secret-do-not-deploy"
+    if os.getenv("DEV_MODE", "").lower() == "true":
+        import warnings
+        warnings.warn(
+            "JWT_SECRET is not set in backend/.env. Using an insecure default for "
+            "local development ONLY. Set JWT_SECRET to a random 64+ character hex "
+            "string before any real deployment.",
+            stacklevel=2,
+        )
+        _JWT_SECRET = "sentinelai-insecure-dev-only-default-jwt-secret-do-not-deploy"
+    else:
+        raise RuntimeError(
+            "JWT_SECRET is not set and DEV_MODE is not 'true'. "
+            "Set JWT_SECRET in backend/.env or set DEV_MODE=true for local development."
+        )
 _JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 _JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
 
@@ -241,15 +247,15 @@ async def register_user(req: RegisterRequest) -> dict:
     doc = {
         "username": req.username,
         "hashed_password": hash_password(req.password),
-        "role": "analyst",
+        "role": "viewer",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await database.users.insert_one(doc)
     # Ensure unique index (idempotent)
     await database.users.create_index("username", unique=True)
 
-    print(f"  [auth] New user registered: {req.username} (role=analyst)")
-    return {"status": "registered", "username": req.username, "role": "analyst"}
+    print(f"  [auth] New user registered: {req.username} (role=viewer)")
+    return {"status": "registered", "username": req.username, "role": "viewer"}
 
 
 async def login_user(req: LoginRequest) -> TokenResponse:

@@ -446,6 +446,8 @@ class LiveConnectionTracker:
             "capture_time": time.time(),
         }
 
+        event["ml_confidence_note"] = "experimental (packet-derived features)"
+
         return event
 
 
