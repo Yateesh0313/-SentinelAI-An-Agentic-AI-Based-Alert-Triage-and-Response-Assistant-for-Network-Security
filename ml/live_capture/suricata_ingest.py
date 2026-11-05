@@ -117,7 +117,7 @@ class SuricataIngestor:
         "SURICATA_CONFIG", r"C:\Users\User\suricata\suricata.yaml"
     )
     DEFAULT_LOG_DIR = os.environ.get(
-        "SURICATA_LOG_DIR", r"C:\Users\User\suricata\log\sentinel"
+        "SURICATA_LOG_DIR", r"c:\Users\User\Downloads\SentinelAI\data\suricata_logs"
     )
 
     def __init__(
@@ -181,17 +181,44 @@ class SuricataIngestor:
         if self._running:
             return {"status": "already_running", "alerts": self._alert_count}
 
+        # Create log directory
+        Path(self.log_dir).mkdir(parents=True, exist_ok=True)
+        eve = self.eve_json_path
+
+        # Check if an external Suricata process is already running and writing to log_dir
+        already_external = False
+        try:
+            import psutil
+            for proc in psutil.process_iter(["name"]):
+                if proc.info.get("name") and "suricata" in proc.info["name"].lower():
+                    already_external = True
+                    break
+        except Exception:
+            pass
+
+        if already_external and eve.exists():
+            self._running = True
+            self._alert_count = 0
+            self._start_time = time.time()
+            self._tail_task = asyncio.create_task(self._tail_eve_json())
+            print(f"  [suricata] Attached to existing Suricata engine; tailing {eve}")
+            return {
+                "status": "started",
+                "pid": "external",
+                "mode": f"attached:{self.interface}",
+                "eve_json": str(eve),
+            }
+
         # Validate binary
         if not Path(self.suricata_bin).exists():
             return {"status": "error", "detail": f"Suricata binary not found: {self.suricata_bin}"}
 
-        # Create log directory
-        Path(self.log_dir).mkdir(parents=True, exist_ok=True)
-
         # Clear old eve.json so we don't re-process stale alerts
-        eve = self.eve_json_path
         if eve.exists():
-            eve.unlink()
+            try:
+                eve.unlink()
+            except OSError:
+                pass
 
         # Build command
         cmd = [

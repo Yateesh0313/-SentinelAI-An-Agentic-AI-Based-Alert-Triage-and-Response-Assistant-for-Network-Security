@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TypedDict
+from typing import TypedDict, Any
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq

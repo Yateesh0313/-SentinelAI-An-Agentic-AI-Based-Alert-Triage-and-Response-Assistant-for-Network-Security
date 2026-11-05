@@ -69,3 +69,8 @@ desktop.ini
 *.pcap
 captures/
 
+
+# Runtime logs
+data/suricata_logs/
+data/eve.json
+data/*.log

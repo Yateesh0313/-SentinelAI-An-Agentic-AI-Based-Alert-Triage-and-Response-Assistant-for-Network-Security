@@ -16,6 +16,8 @@ import {
   Lock,
   ChevronDown,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { SentinelLogo } from "@/components/ui/sentinel-logo";
 
 // ─── Lazy-load 3D Globe ────────────────────────────────────────────────────────
 const GlobeScene = dynamic(
@@ -28,6 +30,12 @@ const GlobeScene = dynamic(
       </div>
     ),
   }
+);
+
+// ─── Lazy-load Cyber Background ────────────────────────────────────────────────
+const CyberBackground = dynamic(
+  () => import("@/components/three/CyberBackground"),
+  { ssr: false }
 );
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -153,9 +161,15 @@ function FeatureCard({ feature, index }: { feature: Feature; index: number }) {
       initial="hidden"
       whileInView="visible"
       viewport={{ once: true, margin: "-50px" }}
-      className="group relative rounded-2xl border border-border bg-white p-6 flex flex-col gap-4
+      className="group relative rounded-2xl border border-border bg-white dark:bg-[#111827] p-6 flex flex-col gap-4
         shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
     >
+      {/* Subtle hover glow */}
+      <div
+        className={`absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-xl pointer-events-none ${
+          colorParts[0].replace("text-", "bg-")
+        }/10`}
+      />
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${colorParts.slice(1).join(" ")}`}>
         <div className={colorParts[0]}>{feature.icon}</div>
       </div>
@@ -167,60 +181,97 @@ function FeatureCard({ feature, index }: { feature: Feature; index: number }) {
 
 // ─── Main Landing Page ────────────────────────────────────────────────────────
 export default function HomePage() {
-  return (
-    <div className="min-h-screen gradient-mesh-bg overflow-x-hidden">
+  const [scrolled, setScrolled] = useState(false);
+  const [dashboardHref, setDashboardHref] = useState("/login");
 
-      {/* ── Navbar ───────────────────────────────────────────────────────── */}
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("sentinel_token")) {
+      setDashboardHref("/dashboard");
+    }
+  }, []);
+
+  const scrollToSection = (id: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 80);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  return (
+    <div className="min-h-screen overflow-x-hidden scroll-smooth bg-[#F4F7FE] dark:bg-[#0B1120]">
+
+      {/* ── Navbar — transparent on hero, solid on scroll ─────────────── */}
       <motion.nav
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-12 py-4
-          bg-white/70 backdrop-blur-xl border-b border-border/50"
+        className={`fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-12 py-4
+          transition-all duration-500 ${
+          scrolled
+            ? "bg-white/70 dark:bg-[#111827]/80 backdrop-blur-xl border-b border-border/50"
+            : "bg-transparent border-b border-transparent"
+        }`}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Shield className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-black text-lg tracking-tight text-foreground">
-            Sentinel<span className="gradient-text">AI</span>
-          </span>
-        </div>
+        <SentinelLogo
+          href="/"
+          size="md"
+          showBadge
+          badgeText="v2.0"
+          textClassName={scrolled ? "text-foreground" : "text-white"}
+        />
 
-        <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground font-medium">
-          <a href="#features" className="hover:text-foreground transition-colors">Features</a>
-          <a href="#pipeline" className="hover:text-foreground transition-colors">Architecture</a>
-          <a href="#stats" className="hover:text-foreground transition-colors">Metrics</a>
+        <div className={`hidden md:flex items-center gap-8 text-sm font-medium transition-colors duration-500 ${
+          scrolled ? "text-muted-foreground" : "text-gray-300"
+        }`}>
+          <a href="#features" onClick={scrollToSection("features")} className={`transition-colors cursor-pointer ${scrolled ? "hover:text-foreground" : "hover:text-white"}`}>Features</a>
+          <a href="#pipeline" onClick={scrollToSection("pipeline")} className={`transition-colors cursor-pointer ${scrolled ? "hover:text-foreground" : "hover:text-white"}`}>Architecture</a>
+          <a href="#stats" onClick={scrollToSection("stats")} className={`transition-colors cursor-pointer ${scrolled ? "hover:text-foreground" : "hover:text-white"}`}>Metrics</a>
         </div>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <Link
             href="/login"
-            className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+            className={`px-4 py-2 text-sm font-semibold transition-colors duration-500 ${
+              scrolled
+                ? "text-muted-foreground hover:text-foreground"
+                : "text-gray-300 hover:text-white"
+            }`}
           >
             Sign In
           </Link>
           <Link
-            href="/login"
+            href={dashboardHref}
             id="hero-cta-nav"
-            className="btn-gradient px-5 py-2 text-sm font-bold rounded-xl"
+            className="btn-gradient px-5 py-2 text-sm font-bold rounded-xl cursor-pointer pointer-events-auto shadow-sm"
           >
             Launch Dashboard
           </Link>
         </div>
       </motion.nav>
 
-      {/* ── Hero Section with 3D Globe ───────────────────────────────────── */}
-      <section className="relative min-h-screen flex items-center overflow-hidden pt-20">
-        <div className="max-w-7xl mx-auto px-6 w-full grid lg:grid-cols-2 gap-12 items-center">
+      {/* ── Hero Section — Dark Immersive with 3D Globe ──────────────── */}
+      <section className="relative min-h-screen flex items-center overflow-hidden bg-[#050816]">
+        {/* 3D Cyber Background */}
+        <CyberBackground className="absolute inset-0 z-0" />
+
+        {/* Content grid */}
+        <div className="relative z-20 max-w-7xl mx-auto px-6 w-full grid lg:grid-cols-2 gap-12 items-center pt-20">
           {/* Left: Text content */}
-          <div className="relative z-10">
+          <div className="relative z-30">
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2, duration: 0.5 }}
               className="inline-flex items-center gap-2 px-4 py-1.5 mb-6
-                rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600
+                rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400
                 text-xs font-semibold uppercase tracking-widest"
             >
               <Zap className="w-3 h-3" />
@@ -231,7 +282,7 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35, duration: 0.7, ease: [0.33, 1, 0.68, 1] }}
-              className="text-5xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] mb-6 text-foreground"
+              className="text-5xl md:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] mb-6 text-white"
             >
               Stop Threats
               <br />
@@ -242,7 +293,7 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5, duration: 0.6 }}
-              className="text-lg md:text-xl text-muted-foreground max-w-lg mb-10 leading-relaxed"
+              className="text-lg md:text-xl text-gray-300 max-w-lg mb-10 leading-relaxed"
             >
               SentinelAI autonomously triages every security alert with a
               multi-agent pipeline — ML detection, ATT&CK mapping, and
@@ -253,25 +304,37 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.65, duration: 0.5 }}
-              className="flex flex-col sm:flex-row items-start gap-4"
+              className="flex flex-col sm:flex-row items-start gap-4 relative z-40 pointer-events-auto"
             >
               <Link
-                href="/login"
+                href={dashboardHref}
                 id="hero-cta-primary"
-                className="group flex items-center gap-2 btn-gradient px-8 py-3.5 rounded-xl font-bold text-base"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    const token = localStorage.getItem("sentinel_token");
+                    window.location.href = token ? "/dashboard" : "/login";
+                  }
+                }}
+                className="group flex items-center gap-2 btn-gradient px-8 py-3.5 rounded-xl font-bold text-base cursor-pointer pointer-events-auto relative z-50 shadow-lg shadow-indigo-500/25"
               >
                 Launch Dashboard
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
-              <a
-                href="#features"
+              <button
+                type="button"
+                id="hero-explore-features"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  document.getElementById("features")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
                 className="flex items-center gap-2 px-8 py-3.5 rounded-xl font-bold text-base
-                  border border-border text-foreground bg-white/60 backdrop-blur
-                  hover:bg-white hover:shadow-md transition-all duration-200"
+                  border border-white/20 text-white bg-white/5 backdrop-blur
+                  hover:bg-white/10 transition-all duration-200 cursor-pointer pointer-events-auto relative z-50"
               >
                 Explore Features
                 <ChevronDown className="w-4 h-4" />
-              </a>
+              </button>
             </motion.div>
           </div>
 
@@ -280,40 +343,43 @@ export default function HomePage() {
             initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.4, duration: 0.8, ease: [0.33, 1, 0.68, 1] }}
-            className="relative h-[400px] md:h-[500px] lg:h-[560px]"
+            className="relative h-[400px] md:h-[500px] lg:h-[560px] pointer-events-auto"
           >
             <Suspense
               fallback={
                 <div className="w-full h-full flex items-center justify-center">
-                  <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-50 to-cyan-50 animate-pulse" />
+                  <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-950/50 to-cyan-950/50 animate-pulse" />
                 </div>
               }
             >
               <GlobeScene className="w-full h-full" />
             </Suspense>
 
-            {/* Floating stat badges around globe */}
-            <div className="absolute top-8 left-4 glass-card rounded-xl px-4 py-2.5 animate-[float_4s_ease-in-out_infinite]">
-              <div className="text-xs font-bold text-red-500 flex items-center gap-1.5">
+            {/* Floating stat badges around globe — dark styled */}
+            <div className="absolute top-8 left-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl px-4 py-2.5 animate-[float_4s_ease-in-out_infinite] pointer-events-none">
+              <div className="text-xs font-bold text-red-400 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-red-500 status-dot-live" />
                 Critical Alert
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">T1046 — Network Scan</div>
+              <div className="text-xs text-gray-400 mt-0.5">T1046 — Network Scan</div>
             </div>
 
-            <div className="absolute bottom-12 right-4 glass-card rounded-xl px-4 py-2.5 animate-[float_5s_ease-in-out_infinite_0.5s]">
-              <div className="text-xs font-bold text-emerald-500 flex items-center gap-1.5">
+            <div className="absolute bottom-12 right-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl px-4 py-2.5 animate-[float_5s_ease-in-out_infinite_0.5s] pointer-events-none">
+              <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Threat Blocked
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">Response time: 1.8s</div>
+              <div className="text-xs text-gray-400 mt-0.5">Response time: 1.8s</div>
             </div>
           </motion.div>
         </div>
+
+        {/* Gradient transition from dark hero to light page */}
+        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-b from-transparent to-[#F4F7FE] dark:to-[#0B1120] pointer-events-none z-10" />
       </section>
 
       {/* ── Stats Bar ──────────────────────────────────────────────────── */}
-      <section id="stats" className="py-16 border-y border-border/50 bg-white/40 backdrop-blur-sm">
+      <section id="stats" className="py-16 border-y border-border/50 bg-white/40 dark:bg-white/5 backdrop-blur-sm">
         <motion.div
           variants={stagger}
           initial="hidden"
@@ -363,8 +429,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Architecture Pipeline ──────────────────────────────────────── */}
-      <section id="pipeline" className="py-24 px-6 bg-white/30 backdrop-blur-sm border-y border-border/50">
+      {/* ── Architecture Pipeline with connectors ──────────────────────── */}
+      <section id="pipeline" className="py-24 px-6 bg-white/30 dark:bg-white/5 backdrop-blur-sm border-y border-border/50">
         <div className="max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -384,27 +450,44 @@ export default function HomePage() {
             </h2>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-0 items-stretch">
             {PIPELINE_STEPS.map((item, i) => (
-              <motion.div
-                key={item.step}
-                variants={fadeUp}
-                custom={i}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true }}
-                className={`rounded-2xl border p-6 ${item.color} hover:shadow-lg hover:-translate-y-1 transition-all duration-300`}
-              >
-                <span className={`text-3xl font-black ${item.textColor} opacity-60`}>{item.step}</span>
-                <h3 className="text-lg font-bold text-foreground mt-3 mb-2">{item.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
-              </motion.div>
+              <div key={item.step} className="flex items-stretch">
+                <motion.div
+                  variants={fadeUp}
+                  custom={i}
+                  initial="hidden"
+                  whileInView="visible"
+                  viewport={{ once: true }}
+                  className={`rounded-2xl border p-6 ${item.color} hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex-1`}
+                >
+                  <span className={`text-3xl font-black ${item.textColor} opacity-60`}>{item.step}</span>
+                  <h3 className="text-lg font-bold text-foreground mt-3 mb-2">{item.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                </motion.div>
+
+                {/* Arrow connector between steps */}
+                {i < PIPELINE_STEPS.length - 1 && (
+                  <div className="hidden lg:flex items-center justify-center px-2">
+                    <motion.div
+                      initial={{ opacity: 0, scaleX: 0 }}
+                      whileInView={{ opacity: 1, scaleX: 1 }}
+                      viewport={{ once: true }}
+                      transition={{ delay: 0.3 + i * 0.15, duration: 0.4 }}
+                      className="flex items-center gap-0"
+                    >
+                      <div className="w-6 h-px bg-gradient-to-r from-indigo-300 to-violet-300" />
+                      <ArrowRight className="w-4 h-4 text-violet-400 -ml-1" />
+                    </motion.div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── CTA Banner ─────────────────────────────────────────────────── */}
+      {/* ── CTA Banner — Dark gradient ─────────────────────────────────── */}
       <section className="py-24 px-6">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -413,24 +496,36 @@ export default function HomePage() {
           transition={{ duration: 0.7 }}
           className="max-w-4xl mx-auto"
         >
-          <div className="relative rounded-3xl overflow-hidden border border-indigo-100 p-12 md:p-16
-            bg-gradient-to-br from-white via-indigo-50/50 to-cyan-50/30 shadow-xl shadow-indigo-500/5">
-            {/* Subtle glow */}
+          <div className="relative rounded-3xl overflow-hidden border border-indigo-500/20 p-12 md:p-16
+            bg-gradient-to-br from-[#0a0e27] via-indigo-950 to-[#0a0e27]">
+            {/* Glow effects */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32
-              bg-gradient-to-b from-indigo-200/30 to-transparent blur-3xl pointer-events-none" />
+              bg-gradient-to-b from-indigo-500/20 to-transparent blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 right-1/4 w-64 h-24
+              bg-gradient-to-t from-violet-500/10 to-transparent blur-3xl pointer-events-none" />
+            {/* Subtle animated particles */}
+            <div className="absolute top-1/4 left-1/4 w-2 h-2 rounded-full bg-indigo-400/30 animate-pulse pointer-events-none" />
+            <div className="absolute top-1/3 right-1/3 w-1.5 h-1.5 rounded-full bg-cyan-400/20 animate-pulse pointer-events-none" style={{ animationDelay: "1s" }} />
+            <div className="absolute bottom-1/3 left-1/3 w-1 h-1 rounded-full bg-violet-400/30 animate-pulse pointer-events-none" style={{ animationDelay: "2s" }} />
 
             <div className="relative z-10 text-center">
-              <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4 text-foreground">
+              <h2 className="text-4xl md:text-5xl font-black tracking-tight mb-4 text-white">
                 Ready to eliminate{" "}
                 <span className="gradient-text">alert fatigue?</span>
               </h2>
-              <p className="text-muted-foreground text-lg mb-8 max-w-xl mx-auto">
+              <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
                 Sign in to your SentinelAI dashboard and let the AI agents work for you.
               </p>
               <Link
-                href="/login"
+                href={dashboardHref}
                 id="hero-cta-bottom"
-                className="group inline-flex items-center gap-2 btn-gradient px-10 py-4 rounded-xl font-bold text-base"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    const token = localStorage.getItem("sentinel_token");
+                    window.location.href = token ? "/dashboard" : "/login";
+                  }
+                }}
+                className="group inline-flex items-center gap-2 btn-gradient px-10 py-4 rounded-xl font-bold text-base cursor-pointer pointer-events-auto relative z-30 shadow-xl shadow-indigo-500/25"
               >
                 Get Started Now
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -441,16 +536,9 @@ export default function HomePage() {
       </section>
 
       {/* ── Footer ─────────────────────────────────────────────────────── */}
-      <footer className="border-t border-border/50 py-10 px-6 bg-white/30 backdrop-blur-sm">
+      <footer className="border-t border-border/50 py-10 px-6 bg-white/30 dark:bg-white/5 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-              <Shield className="w-3 h-3 text-white" />
-            </div>
-            <span className="font-bold text-sm text-foreground">
-              Sentinel<span className="gradient-text">AI</span>
-            </span>
-          </div>
+          <SentinelLogo href="/" size="sm" />
           <p className="text-xs text-muted-foreground">
             Agentic AI Alert Triage & Response · Built with FastAPI, LangGraph & Next.js
           </p>

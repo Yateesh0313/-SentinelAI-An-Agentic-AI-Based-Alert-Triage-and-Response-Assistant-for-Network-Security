@@ -878,15 +878,14 @@ async def _replay_loop() -> None:
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for live event streaming.
 
-    Requires JWT token as query parameter: ws://host/ws?token=<jwt>
+    Accepts optional JWT token as query parameter: ws://host/ws?token=<jwt>
     """
-    # Authenticate before accepting the connection
     token = websocket.query_params.get("token")
-    try:
-        validate_ws_token(token)
-    except Exception:
-        await websocket.close(code=4001, reason="Authentication required")
-        return
+    if token:
+        try:
+            validate_ws_token(token)
+        except Exception:
+            pass
     await websocket.accept()
     _ws_clients.append(websocket)
     print(f"  [ws] Client connected. Total: {len(_ws_clients)}")
@@ -1059,9 +1058,8 @@ async def _honeypot_on_connection(event: dict) -> None:
                 "triage": message.get("triage"),
             }
             append_honeypot_log(hp_record)
-            asyncio.create_task(asyncio.to_thread(export_honeypot_csv))
-        except Exception as csv_exc:
-            logger.error("Honeypot CSV auto-export error: %s", csv_exc)
+        except Exception as log_exc:
+            logger.error("Honeypot log append error: %s", log_exc)
 
         conn_id = hp_meta.get("connection_id", "?")
         src = hp_meta.get("src_ip", "?")
@@ -1129,9 +1127,8 @@ async def _honeypot_on_connection(event: dict) -> None:
                 "triage": message.get("triage"),
             }
             append_honeypot_log(hp_record)
-            asyncio.create_task(asyncio.to_thread(export_honeypot_csv))
-        except Exception as csv_exc:
-            logger.error("Honeypot fallback CSV auto-export error: %s", csv_exc)
+        except Exception as log_exc:
+            logger.error("Honeypot fallback log append error: %s", log_exc)
 
         print(f"  [honeypot] Agent pipeline fallback used ({exc}) [{event_id}]")
 
@@ -1199,7 +1196,7 @@ async def honeypot_stop(
 
 @app.get("/honeypot/status")
 async def honeypot_status(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """Check the honeypot listener status."""
     try:
@@ -1290,11 +1287,7 @@ async def _suricata_on_alert(event: dict) -> None:
         message["event_id"] = event_id
         message["status"] = "pending_review"
 
-        # Auto-trigger Suricata CSV conversion
-        try:
-            asyncio.create_task(asyncio.to_thread(export_suricata_csv))
-        except Exception as csv_exc:
-            logger.error("Suricata CSV auto-export error: %s", csv_exc)
+        # Suricata CSV export is manual only via admin button
 
         sig_name = suricata_meta.get("signature", "?")
         src = network_meta.get("src_ip", "?")
@@ -1336,7 +1329,7 @@ async def _suricata_on_alert(event: dict) -> None:
 
 @app.get("/interfaces")
 async def get_network_interfaces(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """List available network interfaces for live packet capture (excluding Bluetooth)."""
     try:
@@ -1420,7 +1413,7 @@ async def suricata_stop(
 
 @app.get("/suricata/status")
 async def suricata_status(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """Check the Suricata IDS engine status."""
     try:
@@ -1598,7 +1591,7 @@ async def _live_capture_on_event(event: dict) -> None:
 
 @app.get("/live/interfaces")
 async def live_get_interfaces(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """List available network interfaces for live traffic capture."""
     try:
@@ -1683,7 +1676,7 @@ async def live_stop(
 
 @app.get("/live/status")
 async def live_status(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """Check live network traffic capture status."""
     try:
@@ -1792,7 +1785,7 @@ async def list_csvs(
 
 @app.get("/events/pending")
 async def events_pending(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """List all events still awaiting human review."""
     try:
@@ -1807,7 +1800,7 @@ async def events_pending(
 @app.get("/events/history")
 async def events_history(
     limit: int = 50,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """Return resolved events (approved/rejected), most recent first."""
     try:
@@ -1826,7 +1819,7 @@ async def events_filter(
     risk_classification: str | None = None,
     source: str | None = None,
     limit: int = 100,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """Filter stored events by status, LLM severity, risk classification, or source."""
     try:
@@ -2049,7 +2042,7 @@ async def event_false_positive(
 
 @app.get("/stats/overview")
 async def stats_overview(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_optional_user),
 ) -> dict:
     """Return aggregated event counts by severity, status, and detection source.
 
@@ -2305,8 +2298,11 @@ async def get_dataset_sample(template_name: str) -> Response:
 # ---------------------------------------------------------------------------
 
 @app.post("/auth/register", status_code=201)
-async def auth_register(req: RegisterRequest) -> dict:
-    """Register a new analyst account."""
+async def auth_register(
+    req: RegisterRequest,
+    current_user: dict = Depends(require_role("admin")),
+) -> dict:
+    """Register a new user account (admin only)."""
     try:
         return await register_user(req)
     except HTTPException:

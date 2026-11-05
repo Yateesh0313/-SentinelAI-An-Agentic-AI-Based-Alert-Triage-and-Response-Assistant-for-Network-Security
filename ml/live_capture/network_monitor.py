@@ -77,8 +77,9 @@ def get_available_interfaces() -> list[dict[str, Any]]:
             skip_keywords = [
                 "WAN Miniport", "Filter Driver", "QoS Packet",
                 "WFP", "LightWeight", "Virtual WiFi",
+                "Npcap Packet Driver", "Kernel Debug",
             ]
-            if any(kw in desc for kw in skip_keywords):
+            if any(kw in desc for kw in skip_keywords) or "-Npcap" in name:
                 continue
 
             # Try to find IP from ipconfig output
@@ -118,27 +119,59 @@ def get_available_interfaces() -> list[dict[str, Any]]:
 
 
 def resolve_interface(name_or_guid: str) -> str | None:
-    """Resolve a friendly name like 'Wi-Fi' or 'Ethernet' to a Scapy GUID.
+    r"""Resolve a friendly name like 'Wi-Fi' or 'Ethernet' or a GUID to a Scapy device string.
 
-    Also accepts raw GUIDs directly.
+    On Windows, Scapy expects either the NPF device string (e.g. r'\Device\NPF_{GUID}')
+    or a matching name in conf.ifaces.
     """
-    if name_or_guid.startswith("{"):
-        return name_or_guid  # Already a GUID
+    if not name_or_guid:
+        return None
+
+    # If already an NPF device path, return directly
+    if name_or_guid.startswith(r"\Device\NPF_"):
+        return name_or_guid
+
+    # If given a raw GUID like {84C51481-...}, prepend \Device\NPF_
+    if name_or_guid.startswith("{") and name_or_guid.endswith("}"):
+        return rf"\Device\NPF_{name_or_guid}"
 
     try:
+        # 1. First check Scapy's conf.ifaces
+        from scapy.all import conf
+        for k, iface in conf.ifaces.items():
+            iface_name = getattr(iface, "name", "")
+            if iface_name and iface_name.lower() == name_or_guid.lower():
+                return k
+            iface_net_name = getattr(iface, "network_name", "")
+            if iface_net_name and iface_net_name.lower() == name_or_guid.lower():
+                return k
+
+        # Partial match in conf.ifaces
+        for k, iface in conf.ifaces.items():
+            iface_name = getattr(iface, "name", "")
+            if iface_name and name_or_guid.lower() in iface_name.lower():
+                return k
+    except Exception:
+        pass
+
+    try:
+        # 2. Fall back to win.get_windows_if_list()
         import scapy.arch.windows as win
         raw_ifaces = win.get_windows_if_list()
         for iface in raw_ifaces:
             iface_name = iface.get("name", "")
             if iface_name.lower() == name_or_guid.lower():
-                return iface.get("guid", None)
-            # Partial match
+                guid = iface.get("guid", "")
+                return rf"\Device\NPF_{guid}" if guid else name_or_guid
+        for iface in raw_ifaces:
+            iface_name = iface.get("name", "")
             if name_or_guid.lower() in iface_name.lower():
-                return iface.get("guid", None)
+                guid = iface.get("guid", "")
+                return rf"\Device\NPF_{guid}" if guid else name_or_guid
     except Exception:
         pass
 
-    return name_or_guid  # Return as-is on non-Windows
+    return name_or_guid
 
 
 # ---------------------------------------------------------------------------

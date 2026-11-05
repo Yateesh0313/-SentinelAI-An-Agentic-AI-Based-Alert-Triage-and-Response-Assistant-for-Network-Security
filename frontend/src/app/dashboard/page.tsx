@@ -18,13 +18,11 @@ import {
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { Search, Check, X, Flag, ShieldAlert, Info, Zap, Copy } from "lucide-react";
 import { DatasetUploadView } from "@/components/dataset-upload-view";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { SentinelLogo } from "@/components/ui/sentinel-logo";
 import dynamic from "next/dynamic";
-
-const GlobeScene = dynamic(
-  () => import("@/components/three/GlobeScene"),
-  { ssr: false, loading: () => <div className="w-full h-48 rounded-xl skeleton" /> }
-);
 
 const API_BASE = "http://localhost:8000";
 
@@ -74,69 +72,7 @@ function MiniSparkline({
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Trending Stat Tile                                                          */
-/* ────────────────────────────────────────────────────────────────────────── */
 
-function TrendTile({
-  label,
-  value,
-  trend,
-  accentClass,
-  icon,
-  subtitle,
-  history,
-  color,
-  onClick,
-}: {
-  label: string;
-  value: number | string;
-  trend?: number; // percent change
-  accentClass: string;
-  icon: React.ReactNode;
-  subtitle?: string;
-  history?: number[];
-  color?: string;
-  onClick?: () => void;
-}) {
-  const isUp = trend !== undefined && trend >= 0;
-  return (
-    <button
-      onClick={onClick}
-      className={`stat-card ${accentClass} w-full text-left p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 ${onClick ? "cursor-pointer" : "cursor-default"}`}
-    >
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 shadow-sm">
-          {icon}
-        </div>
-        {history && history.length >= 2 && (
-          <MiniSparkline data={history} color={color ?? "#4f46e5"} height={28} />
-        )}
-      </div>
-      <div className="text-2xl font-black text-slate-900 tabular-nums count-animate">
-        {value}
-      </div>
-      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-0.5">
-        {label}
-      </div>
-      {(trend !== undefined || subtitle) && (
-        <div className="flex items-center gap-1.5 mt-2">
-          {trend !== undefined && (
-            <span className={`flex items-center gap-0.5 text-[0.65rem] font-bold ${isUp ? "trend-up" : "trend-down"}`}>
-              <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d={isUp ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
-              </svg>
-              {Math.abs(trend)}%
-            </span>
-          )}
-          {subtitle && (
-            <span className="text-[0.65rem] text-slate-400">{subtitle}</span>
-          )}
-        </div>
-      )}
-    </button>
-  );
-}
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Capture Status Bar                                                          */
@@ -186,7 +122,7 @@ function CaptureStatusBar({
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-slate-200 shadow-sm mb-5">
+    <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-slate-700 shadow-sm mb-5">
       {/* Status dot */}
       <div className="relative flex-shrink-0">
         <span
@@ -337,32 +273,32 @@ function SourceBadge({ source }: { source?: string }) {
 function HoneypotProbePanel({ meta }: { meta?: HoneypotMeta | null }) {
   if (!meta) return null;
   return (
-    <div className="mt-2 p-3 rounded-xl bg-fuchsia-50 border border-fuchsia-200">
+    <div className="mt-2 p-3 rounded-xl bg-fuchsia-50 dark:bg-fuchsia-950/30 border border-fuchsia-200 dark:border-fuchsia-900/50">
       <div className="flex items-center gap-2 mb-2">
-        <svg className="w-3.5 h-3.5 text-fuchsia-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="w-3.5 h-3.5 text-fuchsia-600 dark:text-fuchsia-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           <circle cx="12" cy="10" r="3" />
         </svg>
-        <span className="text-xs font-semibold text-fuchsia-700">Honeypot Probe</span>
+        <span className="text-xs font-semibold text-fuchsia-700 dark:text-fuchsia-300">Honeypot Probe</span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="space-y-1">
-          <div className="text-slate-500">Source</div>
-          <code className="text-[0.7rem] font-mono text-fuchsia-700 bg-fuchsia-50 px-1.5 py-0.5 rounded border border-fuchsia-200">
+          <div className="text-slate-500 dark:text-slate-400">Source</div>
+          <code className="text-[0.7rem] font-mono text-fuchsia-700 dark:text-fuchsia-300 bg-fuchsia-100/60 dark:bg-fuchsia-900/40 px-1.5 py-0.5 rounded border border-fuchsia-200 dark:border-fuchsia-800">
             {meta.src_ip}:{meta.src_port}
           </code>
         </div>
         <div className="space-y-1">
-          <div className="text-slate-500">Target Port</div>
-          <code className="text-[0.7rem] font-mono text-fuchsia-700 bg-fuchsia-50 px-1.5 py-0.5 rounded border border-fuchsia-200">
+          <div className="text-slate-500 dark:text-slate-400">Target Port</div>
+          <code className="text-[0.7rem] font-mono text-fuchsia-700 dark:text-fuchsia-300 bg-fuchsia-100/60 dark:bg-fuchsia-900/40 px-1.5 py-0.5 rounded border border-fuchsia-200 dark:border-fuchsia-800">
             :{meta.dst_port}
           </code>
         </div>
       </div>
       {meta.probe_text && (
         <div className="mt-2">
-          <div className="text-[0.65rem] text-slate-500 mb-1">Probe Data ({meta.probe_bytes_len} bytes)</div>
-          <pre className="text-[0.65rem] font-mono text-slate-700 bg-white p-2 rounded border border-slate-200 overflow-x-auto max-h-16">{meta.probe_text}</pre>
+          <div className="text-[0.65rem] text-slate-500 dark:text-slate-400 mb-1">Probe Data ({meta.probe_bytes_len} bytes)</div>
+          <pre className="text-[0.65rem] font-mono text-slate-700 dark:text-slate-300 bg-white dark:bg-[#111827] p-2 rounded border border-slate-200 dark:border-slate-700 overflow-x-auto max-h-16">{meta.probe_text}</pre>
         </div>
       )}
     </div>
@@ -504,19 +440,19 @@ function EnrichmentPanel({ enrichment }: { enrichment?: IPEnrichment | null }) {
   const flag = countryCodeToFlag(countryCode);
 
   return (
-    <div className="mt-2 p-3 rounded-xl bg-blue-50 border border-blue-200">
+    <div className="mt-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50">
       <div className="flex items-center gap-2 mb-2">
-        <svg className="w-3.5 h-3.5 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
           <path d="M2 12h20" />
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
-        <span className="text-xs font-semibold text-blue-700">IP Enrichment</span>
-        <code className="text-[0.65rem] font-mono text-slate-600 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+        <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">IP Enrichment</span>
+        <code className="text-[0.65rem] font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-[#111827] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
           {ip}
         </code>
         {ip_type === "simulated" && (
-          <span className="text-[0.6rem] text-amber-600 italic">(simulated IP — NSL-KDD)</span>
+          <span className="text-[0.6rem] text-amber-600 dark:text-amber-400 italic">(simulated IP — NSL-KDD)</span>
         )}
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
@@ -524,14 +460,14 @@ function EnrichmentPanel({ enrichment }: { enrichment?: IPEnrichment | null }) {
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
               <span className="text-base leading-none">{flag}</span>
-              <span className="text-slate-700 font-medium">
+              <span className="text-slate-700 dark:text-slate-200 font-medium">
                 {geolocation.city && `${geolocation.city}, `}{geolocation.country}
               </span>
             </div>
-            {geolocation.region && <div className="text-slate-500 pl-6">{geolocation.region}</div>}
-            {geolocation.isp && <div className="text-slate-500 pl-6 truncate" title={geolocation.isp}>ISP: {geolocation.isp}</div>}
+            {geolocation.region && <div className="text-slate-500 dark:text-slate-400 pl-6">{geolocation.region}</div>}
+            {geolocation.isp && <div className="text-slate-500 dark:text-slate-400 pl-6 truncate" title={geolocation.isp}>ISP: {geolocation.isp}</div>}
             {geolocation.lat !== null && geolocation.lon !== null && (
-              <div className="text-slate-400 pl-6 font-mono text-[0.6rem]">
+              <div className="text-slate-400 dark:text-slate-500 pl-6 font-mono text-[0.6rem]">
                 {geolocation.lat.toFixed(2)}, {geolocation.lon.toFixed(2)}
               </div>
             )}
@@ -540,12 +476,12 @@ function EnrichmentPanel({ enrichment }: { enrichment?: IPEnrichment | null }) {
         {hasRep && (
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">Abuse Score:</span>
+              <span className="text-slate-500 dark:text-slate-400">Abuse Score:</span>
               <span className={`font-bold ${abuseColor}`}>{abuseScore}%</span>
             </div>
-            <div className="text-slate-400">Reports: {reputation.total_reports ?? 0}</div>
-            {reputation.isp && <div className="text-slate-400 truncate" title={reputation.isp}>ISP: {reputation.isp}</div>}
-            {reputation.domain && <div className="text-slate-400 truncate" title={reputation.domain}>Domain: {reputation.domain}</div>}
+            <div className="text-slate-400 dark:text-slate-500">Reports: {reputation.total_reports ?? 0}</div>
+            {reputation.isp && <div className="text-slate-400 dark:text-slate-500 truncate" title={reputation.isp}>ISP: {reputation.isp}</div>}
+            {reputation.domain && <div className="text-slate-400 dark:text-slate-500 truncate" title={reputation.domain}>Domain: {reputation.domain}</div>}
           </div>
         )}
       </div>
@@ -563,41 +499,41 @@ function SuricataAlertPanel({ meta, network }: { meta?: SuricataMeta | null; net
   };
   const sevClass = sevColors[meta.severity_label] ?? "text-slate-600 bg-slate-50 border-slate-200";
   return (
-    <div className="mt-2 p-3 rounded-xl bg-cyan-50 border border-cyan-200">
+    <div className="mt-2 p-3 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/50">
       <div className="flex items-center gap-2 mb-2">
-        <svg className="w-3.5 h-3.5 text-cyan-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <span className="text-xs font-semibold text-cyan-700">Suricata IDS Alert</span>
+        <span className="text-xs font-semibold text-cyan-700 dark:text-cyan-300">Suricata IDS Alert</span>
         <span className={`text-[0.65rem] px-1.5 py-0.5 rounded font-medium border ${sevClass}`}>
           {meta.severity_label}
         </span>
       </div>
       <div className="mb-1.5">
-        <code className="text-[0.7rem] font-mono text-cyan-700 bg-white px-1.5 py-0.5 rounded border border-cyan-200">
+        <code className="text-[0.7rem] font-mono text-cyan-700 dark:text-cyan-300 bg-white dark:bg-[#111827] px-1.5 py-0.5 rounded border border-cyan-200 dark:border-cyan-800">
           SID:{meta.signature_id} — {meta.signature}
         </code>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="space-y-1">
-          <div className="text-slate-500">Category</div>
-          <span className="text-cyan-700 font-medium">{meta.category}</span>
+          <div className="text-slate-500 dark:text-slate-400">Category</div>
+          <span className="text-cyan-700 dark:text-cyan-300 font-medium">{meta.category}</span>
         </div>
         <div className="space-y-1">
-          <div className="text-slate-500">Tactic</div>
-          <span className="text-cyan-700 font-medium">{meta.tactic}</span>
+          <div className="text-slate-500 dark:text-slate-400">Tactic</div>
+          <span className="text-cyan-700 dark:text-cyan-300 font-medium">{meta.tactic}</span>
         </div>
         {network && (
           <>
             <div className="space-y-1">
-              <div className="text-slate-500">Source</div>
-              <code className="text-[0.7rem] font-mono text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+              <div className="text-slate-500 dark:text-slate-400">Source</div>
+              <code className="text-[0.7rem] font-mono text-slate-700 dark:text-slate-300 bg-white dark:bg-[#111827] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                 {network.src_ip}:{network.src_port}
               </code>
             </div>
             <div className="space-y-1">
-              <div className="text-slate-500">Destination</div>
-              <code className="text-[0.7rem] font-mono text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+              <div className="text-slate-500 dark:text-slate-400">Destination</div>
+              <code className="text-[0.7rem] font-mono text-slate-700 dark:text-slate-300 bg-white dark:bg-[#111827] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                 {network.dst_ip}:{network.dst_port}
               </code>
             </div>
@@ -611,45 +547,45 @@ function SuricataAlertPanel({ meta, network }: { meta?: SuricataMeta | null; net
 function LiveTrafficMetaPanel({ network, raw }: { network?: NetworkMeta | null; raw?: Record<string, string | number> }) {
   if (!network && !raw) return null;
   return (
-    <div className="mt-2 p-3 rounded-xl bg-teal-50 border border-teal-200">
+    <div className="mt-2 p-3 rounded-xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-900/50">
       <div className="flex items-center gap-2 mb-2">
-        <svg className="w-3.5 h-3.5 text-teal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M5 12.55a11 11 0 0 1 14.08 0" />
           <path d="M1.42 9a16 16 0 0 1 21.16 0" />
           <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
           <circle cx="12" cy="20" r="1" />
         </svg>
-        <span className="text-xs font-semibold text-teal-700">Live Traffic Capture (WiFi / Ethernet)</span>
+        <span className="text-xs font-semibold text-teal-700 dark:text-teal-300">Live Traffic Capture (WiFi / Ethernet)</span>
         {network?.packets !== undefined && (
-          <span className="text-[0.65rem] px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-800 border border-teal-200">
+          <span className="text-[0.65rem] px-1.5 py-0.5 rounded font-medium bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
             {network.packets} pkt{network.packets === 1 ? "" : "s"}
           </span>
         )}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
         <div className="space-y-1">
-          <div className="text-slate-500">Source Host</div>
-          <code className="text-[0.7rem] font-mono text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+          <div className="text-slate-500 dark:text-slate-400">Source Host</div>
+          <code className="text-[0.7rem] font-mono text-slate-800 dark:text-slate-200 bg-white dark:bg-[#111827] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
             {network?.src_ip || raw?.src_ip || "unknown"}:{network?.src_port || raw?.src_port || 0}
           </code>
         </div>
         <div className="space-y-1">
-          <div className="text-slate-500">Destination Host</div>
-          <code className="text-[0.7rem] font-mono text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+          <div className="text-slate-500 dark:text-slate-400">Destination Host</div>
+          <code className="text-[0.7rem] font-mono text-slate-800 dark:text-slate-200 bg-white dark:bg-[#111827] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
             {network?.dst_ip || raw?.dst_ip || "unknown"}:{network?.dst_port || raw?.dst_port || 0}
           </code>
         </div>
         <div className="space-y-1">
-          <div className="text-slate-500">Traffic Volume</div>
-          <span className="text-[0.7rem] font-mono text-teal-800 font-medium">
+          <div className="text-slate-500 dark:text-slate-400">Traffic Volume</div>
+          <span className="text-[0.7rem] font-mono text-teal-800 dark:text-teal-300 font-medium">
             ▲ {Number(raw?.src_bytes || 0).toLocaleString()} B &nbsp; ▼ {Number(raw?.dst_bytes || 0).toLocaleString()} B
           </span>
         </div>
         <div className="space-y-1">
-          <div className="text-slate-500">Flags / State</div>
-          <span className="inline-flex items-center gap-1 font-mono text-[0.7rem] bg-white text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+          <div className="text-slate-500 dark:text-slate-400">Flags / State</div>
+          <span className="inline-flex items-center gap-1 font-mono text-[0.7rem] bg-white dark:bg-[#111827] text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
             {String(raw?.flag || "SF")}
-            <span className="text-[0.6rem] text-slate-500">
+            <span className="text-[0.6rem] text-slate-500 dark:text-slate-400">
               {raw?.flag === "S0" ? "(SYN flood/scan)" : raw?.flag === "REJ" ? "(Rejected)" : raw?.flag === "SF" ? "(Normal)" : ""}
             </span>
           </span>
@@ -662,6 +598,27 @@ function LiveTrafficMetaPanel({ network, raw }: { network?: NetworkMeta | null; 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Event card                                                                  */
 /* ────────────────────────────────────────────────────────────────────────── */
+
+function TruncatedId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  const displayId = id.length > 14 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      title={`Copy full ID: ${id}`}
+      className="inline-flex items-center gap-1 text-[0.6rem] font-mono text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+    >
+      <span>{displayId}</span>
+      {copied ? <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-2.5 h-2.5 opacity-60" />}
+    </button>
+  );
+}
 
 function EventCard({
   event,
@@ -731,126 +688,120 @@ function EventCard({
     : "event-card-normal";
 
   const cardBg = isApproved
-    ? "bg-emerald-50/40 border-emerald-200"
+    ? "bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
     : isRejected
-    ? "bg-slate-50/60 border-slate-200 opacity-70"
+    ? "bg-slate-50/60 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 opacity-70"
     : isInvestigating
-    ? "bg-indigo-50/40 border-indigo-200"
+    ? "bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800"
     : isFalsePositiveStatus
-    ? "bg-slate-50/40 border-slate-200 opacity-60"
+    ? "bg-slate-50/40 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-60"
     : isHoneypot
-    ? "bg-fuchsia-50/20 border-fuchsia-200 hover:border-fuchsia-300"
+    ? "bg-fuchsia-50/20 dark:bg-fuchsia-950/20 border-fuchsia-200 dark:border-fuchsia-800 hover:border-fuchsia-300 dark:hover:border-fuchsia-700"
     : isSuricata
-    ? "bg-cyan-50/20 border-cyan-200 hover:border-cyan-300"
+    ? "bg-cyan-50/20 dark:bg-cyan-950/20 border-cyan-200 dark:border-cyan-800 hover:border-cyan-300 dark:hover:border-cyan-700"
     : isAnomaly
-    ? "bg-red-50/20 border-red-200 hover:border-red-300"
+    ? "bg-red-50/20 dark:bg-red-950/20 border-red-200 dark:border-red-800 hover:border-red-300 dark:hover:border-red-700"
     : hasSigMatch
-    ? "bg-amber-50/20 border-amber-200 hover:border-amber-300"
-    : "bg-white border-slate-200 hover:border-slate-300";
+    ? "bg-amber-50/20 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 hover:border-amber-300 dark:hover:border-amber-700"
+    : "bg-white dark:bg-[#111827] border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600";
 
   return (
     <div className={`mb-3 rounded-xl border transition-all duration-200 overflow-hidden shadow-sm hover:shadow-md ${cardBg} ${stripeClass}`}>
-      <div className="px-4 pt-3.5 pb-2">
+      <div className="p-4">
         <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-slate-400">#{event.event_index}</span>
-            <span className="text-sm font-semibold text-slate-900">
-              {String(raw.protocol_type).toUpperCase()}
-              <span className="text-slate-400 mx-1">/</span>
-              <span className="text-slate-700">{String(raw.service)}</span>
-              <span className="text-slate-400 mx-1">/</span>
-              <span className="text-slate-400">{String(raw.flag)}</span>
-            </span>
-            {event.event_id && (
-              <span className="text-[0.6rem] font-mono text-slate-400">{event.event_id}</span>
-            )}
+            {(() => {
+              const proto = raw?.protocol_type ? String(raw.protocol_type).toUpperCase() : event.network_meta?.proto ? String(event.network_meta.proto).toUpperCase() : raw?.proto ? String(raw.proto).toUpperCase() : "TCP";
+              const srv = raw?.service && String(raw.service) !== "undefined" ? String(raw.service) : event.network_meta?.dst_port ? `port ${event.network_meta.dst_port}` : raw?.dst_port ? `port ${raw.dst_port}` : "network";
+              const flg = raw?.flag && String(raw.flag) !== "undefined" ? String(raw.flag) : raw?.flags ? String(raw.flags) : (event.source === "live_capture" ? "LIVE" : "—");
+              return (
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1">
+                  <span>{proto}</span>
+                  <span className="text-slate-400 mx-0.5">/</span>
+                  <span className="text-slate-700 dark:text-slate-300">{srv}</span>
+                  <span className="text-slate-400 mx-0.5">/</span>
+                  <span className="text-slate-400 text-xs font-normal">{flg}</span>
+                </span>
+              );
+            })()}
+            {event.event_id && <TruncatedId id={event.event_id} />}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <PredictionBadge prediction={event.prediction} />
-            <SourceBadge source={event.source} />
-            <SeverityBadge level={event.severity} />
-            <AttackBadges techniques={event.attack_techniques} />
-            <SignatureBadges matches={event.signature_matches} />
-            <span className="text-[0.65rem] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
-              {(event.confidence * 100).toFixed(0)}%
-            </span>
-            {event.ml_confidence_note && (
-              <span className="text-[0.6rem] font-medium text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full">
-                ⚠ {event.ml_confidence_note}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <SeverityBadge level={event.severity} />
+              <SourceBadge source={event.source} />
+              <AttackBadges techniques={event.attack_techniques} />
+              <SignatureBadges matches={event.signature_matches} />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <PredictionBadge prediction={event.prediction} />
+              <span className="text-[0.65rem] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
+                {(event.confidence * 100).toFixed(0)}%
               </span>
-            )}
+              {event.ml_confidence_note && (
+                <span className="text-[0.6rem] font-medium text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                  ⚠ {event.ml_confidence_note}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Prominent Plain-English Explanation */}
-        {event.triage && (
-          <div className="mt-3 p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 text-xs sm:text-sm leading-relaxed">
-            <div className="flex items-start gap-2">
-              <span className="text-[0.62rem] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded shrink-0 mt-0.5">
-                AI Triage
-              </span>
-              <p className="text-slate-800 font-medium">
-                {event.triage}
-              </p>
-            </div>
+        {/* Plain-English Explanation */}
+        {(event.triage || event.severity_justification || event.recommended_action) && (
+          <div className="mt-3 p-3 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-xs sm:text-sm leading-relaxed space-y-1.5">
+            <span className="text-[0.6rem] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded inline-block mb-1">
+              AI Triage
+            </span>
+            {event.triage && (
+              <div className="flex items-start gap-2">
+                <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                <p className="text-slate-800 dark:text-slate-200"><span className="font-semibold text-slate-700 dark:text-slate-300">What happened: </span>{event.triage}</p>
+              </div>
+            )}
             {event.severity_justification && (
-              <p className="mt-1.5 text-xs text-slate-600 pl-2 border-l-2 border-indigo-200">
-                <span className="font-semibold text-slate-700">Justification: </span>
-                {event.severity_justification}
-              </p>
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-slate-600 dark:text-slate-300"><span className="font-semibold text-slate-700 dark:text-slate-300">Why it matters: </span>{event.severity_justification}</p>
+              </div>
+            )}
+            {event.recommended_action && (
+              <div className="flex items-start gap-2">
+                <Zap className="w-3.5 h-3.5 text-cyan-500 shrink-0 mt-0.5" />
+                <p className="text-slate-600 dark:text-slate-300"><span className="font-semibold text-slate-700 dark:text-slate-300">Recommended action: </span>{event.recommended_action}</p>
+              </div>
             )}
           </div>
         )}
 
-        {/* Risk score row */}
-        {riskScore !== undefined && riskClass && (
-          <div className="mt-2 flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[0.62rem] text-slate-400 uppercase tracking-wider font-semibold">LLM</span>
-              <SeverityBadge level={event.severity} />
-            </div>
-            <span className="text-slate-300 text-xs">vs</span>
-            <div className="flex items-center gap-2">
-              <span className="text-[0.62rem] text-slate-400 uppercase tracking-wider font-semibold">Formula</span>
-              <span className={`px-2 py-0.5 rounded-md text-[0.65rem] font-bold border ${riskColors[riskClass] ?? "bg-slate-100 text-slate-500 border-slate-200"}`}>
-                {riskScore} — {riskClass}
+        {/* Risk chip */}
+        {riskScore !== undefined && riskClass && (() => {
+          const llmTier = ({"Critical": 3, "High": 2, "Medium": 1, "Low": 0} as Record<string, number>)[event.severity as string] ?? -1;
+          const formulaTier = ({"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0})[riskClass] ?? -1;
+          const agree = llmTier === formulaTier;
+          const diff = Math.abs(llmTier - formulaTier);
+          const agreeTip = agree ? "LLM and formula agree" : `${diff}-tier difference: ${agree ? "✓ agree" : diff > 1 ? "⚠ disagree" : "~ close"}`;
+          return (
+            <div className="mt-2 flex items-center gap-2" title={agreeTip}>
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${riskColors[riskClass] ?? "bg-slate-100 text-slate-500 border-slate-200"}`}>
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Risk {riskScore}/100 – {riskClass}
               </span>
-              <div className="w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+              <div className="w-20 h-1.5 rounded-full bg-slate-200 overflow-hidden">
                 <div
                   className={`h-full rounded-full progress-bar-fill ${riskBarColors[riskClass] ?? "bg-slate-400"}`}
                   style={{ width: `${riskScore}%` }}
                 />
               </div>
-              {event.severity && riskClass && (() => {
-                const llmTier = ({"Critical": 3, "High": 2, "Medium": 1, "Low": 0} as Record<string, number>)[event.severity as string] ?? -1;
-                const formulaTier = ({"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0})[riskClass] ?? -1;
-                const agree = llmTier === formulaTier;
-                const diff = Math.abs(llmTier - formulaTier);
-                return (
-                  <span
-                    className={`text-[0.58rem] font-semibold px-1.5 py-0.5 rounded border ${agree ? "bg-emerald-50 text-emerald-700 border-emerald-200" : diff > 1 ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
-                    title={agree ? "LLM and formula agree" : `${diff}-tier difference`}
-                  >
-                    {agree ? "✓ agree" : diff > 1 ? "⚠ disagree" : "~ close"}
-                  </span>
-                );
-              })()}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-2">
-            {isFlagged && event.recommended_action && (
-              <div>
-                <span className="text-xs text-slate-500">Action: </span>
-                <code className="text-xs bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-amber-700">
-                  {event.recommended_action}
-                </code>
-                {event.agent_latency_seconds !== undefined && event.agent_latency_seconds > 0 && (
-                  <span className="text-[0.65rem] text-slate-400 ml-2">({event.agent_latency_seconds}s)</span>
-                )}
-              </div>
+            {event.agent_latency_seconds !== undefined && event.agent_latency_seconds > 0 && (
+              <span className="text-[0.65rem] text-slate-400">⏱ {event.agent_latency_seconds}s</span>
             )}
             <StatusLabel status={event.status} />
           </div>
@@ -860,183 +811,92 @@ function EventCard({
             <div className="flex items-center gap-1.5 flex-wrap justify-end">
               {isPending && (
                 <Button size="xs" variant="investigate" onClick={handleAction(onInvestigate)} disabled={actionInFlight} title="Mark as Investigating">
-                  🔍 Investigate
+                  <Search className="w-3.5 h-3.5 mr-1" /> Investigate
                 </Button>
               )}
               <Button size="xs" variant="success" onClick={handleAction(onApprove)} disabled={actionInFlight}>
-                {actionInFlight ? "…" : "✓ Approve"}
+                {actionInFlight ? "…" : <><Check className="w-3.5 h-3.5 mr-1" /> Approve</>}
               </Button>
               <Button size="xs" variant="secondary" onClick={handleAction(onFalsePositive)} disabled={actionInFlight} title="Mark as False Positive">
-                FP
+                <Flag className="w-3.5 h-3.5 mr-1" /> FP
               </Button>
               <Button size="xs" variant="slate" onClick={handleAction(onReject)} disabled={actionInFlight}>
-                {actionInFlight ? "…" : "✕ Reject"}
+                {actionInFlight ? "…" : <><X className="w-3.5 h-3.5 mr-1" /> Reject</>}
               </Button>
             </div>
           )}
         </div>
       </div>
 
-      {event.triage && (
-        <div className="px-4 pb-3 pt-0 border-t border-slate-100 mt-2">
-          <Collapsible open={expanded} onOpenChange={setExpanded}>
-            <CollapsibleTrigger className="text-xs text-indigo-600 hover:text-indigo-700 transition-colors cursor-pointer flex items-center gap-1 mt-2 font-medium">
-              <svg className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-              <span>{expanded ? "Hide triage details" : "Show triage details"}</span>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-sm leading-relaxed space-y-2">
-                <p>
-                  <span className="font-semibold text-indigo-700">Triage: </span>
-                  <span className="text-slate-600">{event.triage}</span>
-                </p>
-                {event.severity_justification && (
-                  <p>
-                    <span className="font-semibold text-amber-700">Justification: </span>
-                    <span className="text-slate-600">{event.severity_justification}</span>
-                  </p>
-                )}
-                {event.attack_techniques && event.attack_techniques.length > 0 && (
-                  <div>
-                    <span className="font-semibold text-indigo-700">ATT&CK Techniques: </span>
-                    <span className="inline-flex flex-wrap gap-1.5 mt-1">
-                      {event.attack_techniques.map((t) => (
-                        <a key={t.id} href={`https://attack.mitre.org/techniques/${t.id}/`} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors no-underline">
-                          {t.id} — {t.name}
-                        </a>
-                      ))}
+      {/* Technical details — available for ALL events */}
+      <div className="px-4 pb-3 pt-0 border-t border-slate-100 dark:border-slate-800 mt-2">
+        <Collapsible open={expanded} onOpenChange={setExpanded}>
+          <CollapsibleTrigger className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors cursor-pointer flex items-center gap-1.5 mt-2 font-medium">
+            <svg className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+            <span>{expanded ? "Hide technical details" : "Show technical details"}</span>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-2 p-3 rounded-xl bg-slate-50 dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700 text-sm leading-relaxed space-y-2">
+              <EnrichmentPanel enrichment={event.ip_enrichment} />
+              <HoneypotProbePanel meta={event.honeypot_meta} />
+              <SuricataAlertPanel meta={event.suricata_meta} network={event.network_meta} />
+              {event.source === "live_capture" && (
+                <LiveTrafficMetaPanel network={event.network_meta} raw={event.raw_event} />
+              )}
+              {/* Raw event features for all events */}
+              <div className="mt-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <svg className="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <path d="M14 2v6h6" />
+                    <path d="M16 13H8" />
+                    <path d="M16 17H8" />
+                    <path d="M10 9H8" />
+                  </svg>
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Raw Event Features</span>
+                  {event.model_used && (
+                    <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 font-medium">
+                      Model: {event.model_used}
                     </span>
+                  )}
+                  {event.dataset_schema && (
+                    <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 font-medium">
+                      Schema: {event.dataset_schema}
+                    </span>
+                  )}
+                  {event.actual && (
+                    <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 font-mono">
+                      Actual: {event.actual}
+                    </span>
+                  )}
+                </div>
+                {raw && Object.keys(raw).length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
+                    {Object.entries(raw).slice(0, 24).map(([key, val]) => (
+                      <div key={key} className="flex items-baseline gap-1 text-[0.65rem] truncate">
+                        <span className="text-slate-400 font-medium truncate">{key}:</span>
+                        <span className="text-slate-700 dark:text-slate-200 font-mono truncate">{String(val)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400 italic">No raw attributes recorded.</div>
+                )}
+                {raw && Object.keys(raw).length > 24 && (
+                  <div className="text-[0.6rem] text-slate-400 mt-1 italic">
+                    +{Object.keys(raw).length - 24} more features
                   </div>
                 )}
-                <EnrichmentPanel enrichment={event.ip_enrichment} />
-                <HoneypotProbePanel meta={event.honeypot_meta} />
-                <SuricataAlertPanel meta={event.suricata_meta} network={event.network_meta} />
-                {event.source === "live_capture" && (
-                  <LiveTrafficMetaPanel network={event.network_meta} raw={event.raw_event} />
-                )}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Trending Stats Bar (premium redesign)                                       */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-function StatsBar({ events }: { events: SentinelEvent[] }) {
-  // Build simple time-bucketed history (last 10 events as trend)
-  const bucket = (predicate: (e: SentinelEvent) => boolean) => {
-    const windows: number[] = [];
-    for (let i = 0; i < 8; i++) {
-      const start = events.length - (i + 1) * Math.ceil(events.length / 8);
-      const end   = events.length - i * Math.ceil(events.length / 8);
-      windows.unshift(events.slice(Math.max(0, start), Math.max(0, end)).filter(predicate).length);
-    }
-    return windows;
-  };
-
-  const anomalyCount   = events.filter((e) => e.prediction === "anomaly").length;
-  const pendingCount   = events.filter((e) => e.status === "pending_review").length;
-  const approvedCount  = events.filter((e) => e.status === "approved").length;
-  const rejectedCount  = events.filter((e) => e.status === "rejected").length;
-  const honeypotCount  = events.filter((e) => e.prediction === "honeypot").length;
-  const suricataCount  = events.filter((e) => e.prediction === "suricata_alert").length;
-  const liveCount      = events.filter((e) => e.source === "live_capture").length;
-
-  const mlOnly      = events.filter((e) => e.ml_flagged && !e.sig_flagged).length;
-  const sigOnly     = events.filter((e) => !e.ml_flagged && e.sig_flagged).length;
-  const bothFlagged = events.filter((e) => e.ml_flagged && e.sig_flagged).length;
-  const neitherFlagged = events.filter((e) => !e.ml_flagged && !e.sig_flagged).length;
-
-  const stats = [
-    { label: "Total",     value: events.length, accent: "accent-indigo",  color: "#4f46e5", icon: (
-      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
-    )},
-    { label: "Anomalies", value: anomalyCount,  accent: "accent-red",     color: "#dc2626", icon: (
-      <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-    ), history: bucket((e) => e.prediction === "anomaly")},
-    { label: "Honeypot",  value: honeypotCount, accent: "accent-fuchsia", color: "#a21caf", icon: (
-      <svg className="w-4 h-4 text-fuchsia-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    )},
-    { label: "Suricata",  value: suricataCount, accent: "accent-cyan",    color: "#0891b2", icon: (
-      <svg className="w-4 h-4 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-    )},
-    { label: "Pending",   value: pendingCount,  accent: "accent-amber",   color: "#d97706", icon: (
-      <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2"/></svg>
-    )},
-    { label: "Approved",  value: approvedCount, accent: "accent-emerald", color: "#059669", icon: (
-      <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-    )},
-    { label: "Rejected",  value: rejectedCount, accent: "accent-violet",  color: "#7c3aed", icon: (
-      <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-    )},
-    ...(liveCount > 0 ? [{
-      label: "Live", value: liveCount, accent: "accent-teal", color: "#0d9488", icon: (
-        <svg className="w-4 h-4 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
-      )
-    }] : []),
-  ];
-
-  return (
-    <div className="space-y-4 mb-6">
-      {/* Trending stat tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-        {stats.map((stat) => (
-          <div key={stat.label} className={`stat-card ${stat.accent} p-3 text-center`}>
-            <div className="flex items-center justify-center mb-2">{stat.icon}</div>
-            <div className="text-2xl font-black text-slate-900 tabular-nums">{stat.value}</div>
-            <div className="text-[0.65rem] font-semibold text-slate-500 uppercase tracking-wider mt-0.5">{stat.label}</div>
-            {stat.history && stat.history.length >= 2 && (
-              <div className="mt-1.5 flex justify-center">
-                <MiniSparkline data={stat.history} color={stat.color} height={20} />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Detection method comparison */}
-      {events.length > 0 && (mlOnly + sigOnly + bothFlagged) > 0 && (
-        <div className="rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50/60 to-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-6 h-6 rounded-lg bg-indigo-100 flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
             </div>
-            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Detection Method Comparison</span>
-          </div>
-          <div className="grid grid-cols-4 gap-4">
-            {[
-              { label: "ML Only",  value: mlOnly,        color: "text-red-600",     bar: "bg-red-500",     desc: "ML anomaly, no sig match" },
-              { label: "Sig Only", value: sigOnly,       color: "text-amber-600",   bar: "bg-amber-500",   desc: "Signature match, ML normal" },
-              { label: "Both",     value: bothFlagged,   color: "text-red-700",     bar: "bg-red-600",     desc: "ML + signature agree" },
-              { label: "Neither",  value: neitherFlagged,color: "text-emerald-600", bar: "bg-emerald-500", desc: "Both say clean" },
-            ].map((ds) => (
-              <div key={ds.label} className="text-center group">
-                <div className={`text-xl font-black ${ds.color}`}>{ds.value}</div>
-                <div className="text-[0.65rem] text-slate-500 font-semibold uppercase tracking-wider" title={ds.desc}>
-                  {ds.label}
-                </div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full progress-bar-fill ${ds.bar}`}
-                    style={{ width: events.length > 0 ? `${Math.round((ds.value / events.length) * 100)}%` : "0%" }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
     </div>
   );
 }
+
+
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* MongoDB Stats Overview (redesigned with trending tiles)                    */
@@ -1118,13 +978,14 @@ function StatsOverview({
   if (!stats || !stats.total_events || stats.total_events <= 0) return null;
 
   const tiles: { label: string; value: number; accent: string; color: string; icon: string; filter: Record<string, string>; subtitle?: string }[] = [
-    { label: "Total Events",    value: stats.total_events,     accent: "accent-indigo",  color: "#4f46e5", icon: "📁", filter: { status: "all" } },
-    { label: "Pending Review",  value: stats.pending_review ?? 0,   accent: "accent-amber",   color: "#d97706", icon: "⏳", filter: { status: "pending_review" }, subtitle: "needs action" },
+    { label: "Total",           value: stats.total_events,     accent: "accent-indigo",  color: "#4f46e5", icon: "📁", filter: { status: "all" } },
+    { label: "Pending",         value: stats.pending_review ?? 0,   accent: "accent-amber",   color: "#d97706", icon: "⏳", filter: { status: "pending_review" }, subtitle: "needs action" },
     { label: "Investigating",   value: stats.investigating ?? 0,    accent: "accent-cyan",    color: "#0891b2", icon: "🔍", filter: { status: "investigating" } },
-    { label: "LLM Critical",    value: stats.critical_severity ?? 0,accent: "accent-red",     color: "#dc2626", icon: "🚨", filter: { llm_severity: "Critical" } },
-    { label: "Risk CRITICAL",   value: stats.risk_critical ?? 0,    accent: "accent-red",     color: "#b91c1c", icon: "⚠",  filter: { risk_classification: "CRITICAL" } },
-    { label: "Honeypot Events", value: stats.honeypot_sourced ?? 0, accent: "accent-fuchsia", color: "#a21caf", icon: "🍯", filter: { source: "honeypot" } },
-    { label: "Suricata Events", value: stats.suricata_sourced ?? stats.by_source?.["suricata"] ?? 0, accent: "accent-teal", color: "#0d9488", icon: "🛡️", filter: { source: "suricata" } },
+
+    { label: "Critical",        value: stats.critical_severity ?? 0,accent: "accent-red",     color: "#dc2626", icon: "🚨", filter: { llm_severity: "Critical" } },
+    { label: "Honeypot",        value: stats.honeypot_sourced ?? 0, accent: "accent-fuchsia", color: "#a21caf", icon: "🍯", filter: { source: "honeypot" } },
+    { label: "Suricata",        value: stats.suricata_sourced ?? stats.by_source?.["suricata"] ?? 0, accent: "accent-teal", color: "#0d9488", icon: "🛡️", filter: { source: "suricata" } },
+    { label: "Live",            value: stats.by_source?.["live_capture"] ?? 0, accent: "accent-cyan", color: "#0891b2", icon: "📡", filter: { source: "live_capture" } },
     { label: "False Positives", value: stats.false_positives ?? 0,  accent: "accent-violet",  color: "#7c3aed", icon: "❌", filter: { status: "false_positive" } },
   ];
 
@@ -1162,7 +1023,7 @@ function StatsOverview({
       {stats.by_llm_severity && Object.keys(stats.by_llm_severity).length > 0 && (
         <div className="mt-3 grid grid-cols-2 gap-3">
           {/* LLM distribution */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#111827] p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-1 h-4 rounded-full bg-indigo-400" />
               <span className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-500">LLM Severity Distribution</span>
@@ -1177,10 +1038,10 @@ function StatsOverview({
                   <button
                     key={sev}
                     onClick={() => openFilterModal(`LLM Severity: ${sev}`, { llm_severity: sev })}
-                    className="w-full flex items-center gap-2 group p-1 rounded-lg hover:bg-slate-50 text-left transition-colors cursor-pointer"
+                    className="w-full flex items-center gap-2 group p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer"
                   >
-                    <span className={`text-[0.65rem] font-semibold w-14 ${textCol} group-hover:text-slate-900`}>{sev}</span>
-                    <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <span className={`text-[0.65rem] font-semibold w-14 ${textCol} group-hover:text-slate-900 dark:group-hover:text-white`}>{sev}</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
                       <div className={`h-full rounded-full ${col} progress-bar-fill group-hover:brightness-110 transition-all`} style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-[0.6rem] font-bold text-slate-400 group-hover:text-indigo-600 w-7 text-right font-mono">{count}</span>
@@ -1190,7 +1051,7 @@ function StatsOverview({
             </div>
           </div>
           {/* Formula risk distribution */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#111827] p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-1 h-4 rounded-full bg-amber-400" />
               <span className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-500">Formula Risk Distribution</span>
@@ -1205,10 +1066,10 @@ function StatsOverview({
                   <button
                     key={cls}
                     onClick={() => openFilterModal(`Formula Risk: ${cls}`, { risk_classification: cls })}
-                    className="w-full flex items-center gap-2 group p-1 rounded-lg hover:bg-slate-50 text-left transition-colors cursor-pointer"
+                    className="w-full flex items-center gap-2 group p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer"
                   >
-                    <span className={`text-[0.65rem] font-semibold w-16 ${textCol} group-hover:text-slate-900`}>{cls}</span>
-                    <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <span className={`text-[0.65rem] font-semibold w-16 ${textCol} group-hover:text-slate-900 dark:group-hover:text-white`}>{cls}</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
                       <div className={`h-full rounded-full ${col} progress-bar-fill group-hover:brightness-110 transition-all`} style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-[0.6rem] font-bold text-slate-400 group-hover:text-indigo-600 w-7 text-right font-mono">{count}</span>
@@ -1229,10 +1090,10 @@ function StatsOverview({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ type: "spring", stiffness: 350, damping: 28 }}
-              className="relative w-full max-w-4xl max-h-[85vh] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+              className="relative w-full max-w-4xl max-h-[85vh] flex flex-col rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#111827] shadow-2xl overflow-hidden"
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-slate-50">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-indigo-50 dark:from-indigo-950/30 to-slate-50 dark:to-[#111827]">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-600 text-lg">
                     🔍
@@ -1250,7 +1111,7 @@ function StatsOverview({
               </div>
 
               {/* Modal Body */}
-              <div className="p-6 overflow-y-auto space-y-3 flex-1 custom-scrollbar bg-slate-50">
+              <div className="p-6 overflow-y-auto space-y-3 flex-1 custom-scrollbar bg-slate-50 dark:bg-[#0B1120]">
                 {modalLoading ? (
                   <div className="py-16 text-center">
                     <div className="inline-flex items-center gap-3 text-slate-400">
@@ -1269,7 +1130,7 @@ function StatsOverview({
                 ) : (
                   modalEvents.map((ev, i) => (
                     <EventCard
-                      key={`${ev.event_id || i}`}
+                      key={`modal-${i}-${ev.event_id || ev.event_index}`}
                       event={ev}
                       onApprove={async (id) => {
                         const ok = onApprove ? await onApprove(id) : false;
@@ -1360,7 +1221,7 @@ function HistoryView({ onExportCsv }: { onExportCsv?: (source: "suricata" | "hon
       <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-5 rounded-full bg-gradient-to-b from-violet-500 to-violet-300" />
-          <p className="text-sm font-semibold text-slate-700">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
             {history.length} resolved events
             <span className="text-slate-400 font-normal ml-1">(persisted in MongoDB)</span>
           </p>
@@ -1529,7 +1390,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#F4F7FE] via-[#F0F9FF] to-[#F0FDF4] text-[#0B1B3A]">
+    <div className="min-h-screen bg-gradient-to-br from-[#F4F7FE] via-[#F0F9FF] to-[#F0FDF4] dark:from-[#0B1120] dark:via-[#0F172A] dark:to-[#0B1120] text-[#0B1B3A] dark:text-slate-200">
 
       {/* Auth error banner */}
       {authError && (
@@ -1540,29 +1401,16 @@ export default function Home() {
       )}
 
       {/* ── Top Nav ── */}
-      <nav className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
+      <nav className="sticky top-0 z-40 bg-white dark:bg-[#111827] border-b border-slate-200 dark:border-slate-700 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-400 flex items-center justify-center shadow-sm">
-                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd"/>
-                </svg>
-              </div>
-              <div>
-                <span className="font-black text-base tracking-tight text-slate-900">
-                  Sentinel<span className="text-indigo-600">AI</span>
-                </span>
-                <span className="ml-2 px-2 py-0.5 rounded-md text-[0.58rem] font-bold uppercase tracking-widest bg-indigo-50 text-indigo-600 border border-indigo-200">
-                  Dashboard
-                </span>
-              </div>
-            </div>
+            <SentinelLogo href="/" size="md" showBadge badgeText="SOC" />
 
             {/* Right nav */}
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 hidden sm:block" id="dashboard-username">
+              <ThemeToggle />
+              <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block" id="dashboard-username">
                 {mounted && currentUser ? `👤 ${currentUser}` : ""}
               </span>
               <Button
@@ -1606,31 +1454,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Threat Globe (lazy-loaded) */}
-        {mounted && events.some(e => e.ip_enrichment?.geolocation?.lat) && (
-          <div className="mb-5 rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-sm font-bold text-slate-700">🌐 Global Threat Map</span>
-              <span className="text-[0.6rem] text-slate-400">Live GeoIP attack sources</span>
-            </div>
-            <div className="h-64 sm:h-80">
-              <GlobeScene
-                className="w-full h-full"
-                alerts={events
-                  .filter(e => e.ip_enrichment?.geolocation?.lat && e.ip_enrichment?.geolocation?.lon)
-                  .slice(0, 20)
-                  .map(e => ({
-                    lat: e.ip_enrichment!.geolocation.lat!,
-                    lon: e.ip_enrichment!.geolocation.lon!,
-                    label: e.ip_enrichment!.geolocation.country || e.ip_enrichment!.ip || "Unknown",
-                    severity: (e.severity as "Critical" | "High" | "Medium" | "Low") || undefined,
-                  }))
-                }
-              />
-            </div>
-          </div>
-        )}
-
         {/* KPI Skeleton Row */}
         {!mounted ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
@@ -1666,7 +1489,7 @@ export default function Home() {
         />
 
         {/* ── Tab Bar ── */}
-        <div className="flex items-center gap-1 mb-6 bg-white rounded-xl border border-slate-200 p-1 shadow-sm">
+        <div className="flex items-center gap-1 mb-6 bg-white dark:bg-[#111827] rounded-xl border border-slate-200 dark:border-slate-700 p-1 shadow-sm">
           {tabs.map((tab) => (
             <button
               key={tab.key}
@@ -1687,7 +1510,7 @@ export default function Home() {
         {activeTab === "live" ? (
           <>
             {/* Controls bar */}
-            <div className="flex items-center gap-2 mb-5 flex-wrap bg-white rounded-xl border border-slate-200 px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-2 mb-5 flex-wrap bg-white dark:bg-[#111827] rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 shadow-sm">
               {/* Connection indicator */}
               <div className="flex items-center gap-2 mr-2">
                 <span
@@ -1807,7 +1630,7 @@ export default function Home() {
             </AnimatePresence>
 
             {/* ── Live Network Traffic Capture Command Center ── */}
-            <div className="mb-5 rounded-2xl border border-teal-200 bg-white shadow-sm overflow-hidden">
+            <div className="mb-5 rounded-2xl border border-teal-200 dark:border-teal-800 bg-white dark:bg-[#111827] shadow-sm overflow-hidden">
               <div className="px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-teal-50 to-white border-b border-teal-100">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
@@ -1976,8 +1799,7 @@ export default function Home() {
               onFalsePositive={markFalsePositive}
             />
 
-            {/* Session stats */}
-            <StatsBar events={events} />
+
 
             {/* Event Feed */}
             {wsStatus === "connecting" && events.length === 0 ? (
@@ -2008,18 +1830,18 @@ export default function Home() {
                 </Button>
               </div>
             ) : events.length === 0 ? (
-              <div className="text-center py-20 rounded-2xl border border-dashed border-slate-300 bg-white">
+              <div className="text-center py-20 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-[#111827]">
                 <div className="text-5xl mb-4">🛡️</div>
-                <h3 className="text-base font-bold text-slate-700 mb-1">No events yet</h3>
+                <h3 className="text-base font-bold text-slate-700 dark:text-slate-200 mb-1">No alerts yet</h3>
                 <p className="text-slate-400 text-sm max-w-xs mx-auto">
-                  Click <strong>▶ Start Replay</strong> to begin streaming network events.
+                  Click <strong>▶ Start Replay</strong> to stream benchmark traffic, or activate <strong>Live Sniffer</strong> to capture real network packets.
                 </p>
               </div>
             ) : (
               <AnimatePresence initial={false}>
                 {events.map((ev, i) => (
                   <motion.div
-                    key={`${ev.event_index}-${ev.event_id || i}`}
+                    key={`live-${i}-${ev.event_id || ev.event_index}`}
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.22, ease: "easeOut" }}
@@ -2043,16 +1865,16 @@ export default function Home() {
         ) : (
           /* Comparative R&D Study tab */
           <div className="space-y-5">
-            <div className="rounded-2xl border border-indigo-200 bg-white shadow-sm overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 to-white border-b border-indigo-100">
+            <div className="rounded-2xl border border-indigo-200 dark:border-indigo-900/50 bg-white dark:bg-[#111827] shadow-sm overflow-hidden">
+              <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 dark:from-indigo-950/40 to-white dark:to-[#111827] border-b border-indigo-100 dark:border-indigo-900/50">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center text-xl">🔬</div>
+                  <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 flex items-center justify-center text-xl">🔬</div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md text-[0.6rem] font-bold uppercase tracking-widest bg-indigo-50 text-indigo-600 border border-indigo-200">Research</span>
-                      <h2 className="text-base font-bold text-slate-900">Comparative R&amp;D Study</h2>
+                      <span className="px-2 py-0.5 rounded-md text-[0.6rem] font-bold uppercase tracking-widest bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">Research</span>
+                      <h2 className="text-base font-bold text-slate-900 dark:text-white">Comparative R&amp;D Study</h2>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       Experimental detection methods explored during the research phase of SentinelAI.
                       These are <strong>not</strong> part of the production triage pipeline.
                     </p>
@@ -2060,9 +1882,9 @@ export default function Home() {
                 </div>
               </div>
               <div className="p-6 space-y-4">
-                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200">
-                  <h3 className="text-sm font-bold text-slate-900 mb-2">Quantum-Enhanced ML (Exploratory)</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed">
+                <div className="p-5 rounded-xl bg-slate-50 dark:bg-[#1E293B] border border-slate-200 dark:border-slate-700">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">Quantum-Enhanced ML (Exploratory)</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                     A comparative study explored Variational Quantum Classifier (VQC) circuits
                     against the production XGBoost model on the NSL-KDD dataset. The quantum approach
                     used Qiskit&apos;s Aer simulator with ZZFeatureMap encoding and a RealAmplitudes ansatz.
@@ -2070,29 +1892,29 @@ export default function Home() {
                     classifier in both accuracy and inference speed, validating the production choice.
                   </p>
                   <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
-                      <div className="text-xs text-emerald-700 font-bold uppercase tracking-wider">XGBoost (Production)</div>
-                      <div className="text-2xl font-black text-emerald-600 mt-1">99.1%</div>
-                      <div className="text-[0.65rem] text-slate-500 mt-0.5">Accuracy on KDDTest+</div>
+                    <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50">
+                      <div className="text-xs text-emerald-700 dark:text-emerald-400 font-bold uppercase tracking-wider">XGBoost (Production)</div>
+                      <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">99.1%</div>
+                      <div className="text-[0.65rem] text-slate-500 dark:text-slate-400 mt-0.5">Accuracy on KDDTest+</div>
                     </div>
-                    <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200">
-                      <div className="text-xs text-indigo-700 font-bold uppercase tracking-wider">Quantum VQC (Research)</div>
-                      <div className="text-2xl font-black text-indigo-600 mt-1">~65-70%</div>
-                      <div className="text-[0.65rem] text-slate-500 mt-0.5">Accuracy (simulator)</div>
+                    <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/50">
+                      <div className="text-xs text-indigo-700 dark:text-indigo-400 font-bold uppercase tracking-wider">Quantum VQC (Research)</div>
+                      <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1">~65-70%</div>
+                      <div className="text-[0.65rem] text-slate-500 dark:text-slate-400 mt-0.5">Accuracy (simulator)</div>
                     </div>
                   </div>
                 </div>
                 {researchMode && (
-                  <div className="p-5 rounded-xl bg-fuchsia-50 border border-fuchsia-200">
-                    <h3 className="text-sm font-bold text-slate-900 mb-2">🍯 Honeypot Intelligence (Research Mode)</h3>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                  <div className="p-5 rounded-xl bg-fuchsia-50 dark:bg-fuchsia-950/30 border border-fuchsia-200 dark:border-fuchsia-900/50">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">🍯 Honeypot Intelligence (Research Mode)</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                       The honeypot listener is available in Research Mode. It deploys a decoy
                       TCP listener on localhost to capture real adversarial probes and feed them
                       into the triage pipeline. Toggle it from the Live Feed controls.
                     </p>
                   </div>
                 )}
-                <p className="text-[0.65rem] text-slate-400 italic">
+                <p className="text-[0.65rem] text-slate-400 dark:text-slate-500 italic">
                   These experimental approaches informed architecture decisions but are not
                   included in the operational detection pipeline.
                 </p>

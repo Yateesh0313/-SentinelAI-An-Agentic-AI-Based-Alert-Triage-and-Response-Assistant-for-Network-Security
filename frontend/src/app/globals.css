@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable dark mode via .dark class on html element */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ═══════════════════════════════════════════════════════════════════════════
    SentinelAI — Design System v2 (Light Theme)
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -38,7 +41,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* ── Light Theme (default & only) ──────────────────────────────────────── */
+/* ── Light Theme (default) ──────────────────────────────────────────── */
 :root {
   --radius: 1rem;
 
@@ -370,4 +373,427 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SentinelAI — Dark Theme Utilities (for hero/login sections)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Dark glassmorphism card */
+.glass-card-dark {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-card-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Dark gradient mesh background for hero/login */
+.dark-mesh-bg {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 30%, rgba(79, 70, 229, 0.12), transparent),
+    radial-gradient(ellipse 60% 60% at 80% 20%, rgba(6, 182, 212, 0.08), transparent),
+    radial-gradient(ellipse 70% 50% at 50% 80%, rgba(124, 58, 237, 0.06), transparent),
+    linear-gradient(180deg, #050816 0%, #0a0e27 50%, #050816 100%);
+}
+
+/* Cyber glow text */
+.glow-text-cyan {
+  text-shadow: 0 0 20px rgba(6, 182, 212, 0.5), 0 0 40px rgba(6, 182, 212, 0.2);
+}
+.glow-text-indigo {
+  text-shadow: 0 0 20px rgba(79, 70, 229, 0.5), 0 0 40px rgba(79, 70, 229, 0.2);
+}
+
+/* Scanning line animation */
+@keyframes scan-line {
+  0%   { transform: translateY(-100%); opacity: 0; }
+  10%  { opacity: 0.5; }
+  90%  { opacity: 0.5; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+.scan-line {
+  animation: scan-line 4s ease-in-out infinite;
+}
+
+/* Hex grid pattern background */
+.hex-grid-bg {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%234f46e5' fill-opacity='0.04'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Floating badge for dark backgrounds */
+.floating-badge-dark {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+}
+
+/* Animated border gradient */
+@keyframes border-rotate {
+  from { --border-angle: 0deg; }
+  to   { --border-angle: 360deg; }
+}
+
+/* Glow card hover effect */
+.glow-card {
+  position: relative;
+  transition: all 0.3s ease;
+}
+.glow-card::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0), rgba(6, 182, 212, 0));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+  filter: blur(12px);
+}
+.glow-card:hover::after {
+  opacity: 1;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.15), rgba(6, 182, 212, 0.1));
+}
+
+/* Connecting arrow for pipeline */
+.pipeline-arrow {
+  display: none;
+}
+@media (min-width: 768px) {
+  .pipeline-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #CBD5E1;
+    font-size: 1.5rem;
+    opacity: 0.5;
+  }
+}
+
+/* Dashboard subtle animated background */
+.dashboard-bg-pattern {
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(79, 70, 229, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(6, 182, 212, 0.02) 0%, transparent 50%),
+    radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.02) 0%, transparent 50%);
+}
+
+/* Subtle grid animation for dashboard */
+@keyframes grid-pulse {
+  0%, 100% { opacity: 0.03; }
+  50%      { opacity: 0.06; }
+}
+
+.dashboard-grid-bg {
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, rgba(79, 70, 229, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(79, 70, 229, 0.03) 1px, transparent 1px);
+  animation: grid-pulse 8s ease-in-out infinite;
+}
+
+/* Input dark theme */
+.input-dark {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  transition: all 0.2s ease;
+}
+.input-dark::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+.input-dark:focus {
+  outline: none;
+  border-color: rgba(79, 70, 229, 0.5);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Dark Theme — Activated by .dark class on <html>
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dark {
+  --background: #0B1120;
+  --foreground: #E2E8F0;
+
+  --card: #111827;
+  --card-foreground: #E2E8F0;
+
+  --popover: #111827;
+  --popover-foreground: #E2E8F0;
+
+  --primary: #818CF8;
+  --primary-foreground: #0B1120;
+
+  --secondary: #1E293B;
+  --secondary-foreground: #C7D2FE;
+
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+
+  --accent: #1E1B4B;
+  --accent-foreground: #A5B4FC;
+
+  --destructive: #F87171;
+
+  --border: #1E293B;
+  --input: #1E293B;
+  --ring: #818CF8;
+
+  --chart-1: #818CF8;
+  --chart-2: #22D3EE;
+  --chart-3: #34D399;
+  --chart-4: #FBBF24;
+  --chart-5: #F87171;
+
+  color-scheme: dark;
+}
+
+/* ── Dark mode scrollbar ─────────────────────────────────────────────── */
+.dark ::-webkit-scrollbar-track { background: #0B1120; }
+.dark ::-webkit-scrollbar-thumb { background: #334155; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ── Dark mode stat-card ─────────────────────────────────────────────── */
+.dark .stat-card {
+  background: #111827;
+  border-color: #1E293B;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
+}
+.dark .stat-card:hover {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Dark mode skeleton ──────────────────────────────────────────────── */
+.dark .skeleton {
+  background: linear-gradient(90deg, #1E293B 25%, #334155 50%, #1E293B 75%);
+  background-size: 200% 100%;
+}
+
+/* ── Dark mode custom scrollbar ──────────────────────────────────────── */
+.dark .custom-scrollbar::-webkit-scrollbar-track { background: #111827; }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ── Dashboard dark overrides ────────────────────────────────────────── */
+
+/* Navbar */
+.dark nav.sticky {
+  background: #111827 !important;
+  border-color: #1E293B !important;
+}
+
+/* Main dashboard background */
+.dark .min-h-screen.bg-gradient-to-br {
+  background: linear-gradient(135deg, #0B1120, #0F172A, #0B1120) !important;
+}
+
+/* White backgrounds → dark surfaces */
+.dark .bg-white {
+  background-color: #111827 !important;
+}
+
+.dark .bg-white\/70 {
+  background-color: rgba(17, 24, 39, 0.7) !important;
+}
+
+.dark .bg-white\/40 {
+  background-color: rgba(17, 24, 39, 0.4) !important;
+}
+
+.dark .bg-white\/30 {
+  background-color: rgba(17, 24, 39, 0.3) !important;
+}
+
+/* Borders */
+.dark .border-slate-200 {
+  border-color: #1E293B !important;
+}
+
+.dark .border-slate-100 {
+  border-color: #1E293B !important;
+}
+
+.dark .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+/* Text colors for dark mode */
+.dark .text-slate-900 {
+  color: #F1F5F9 !important;
+}
+
+.dark .text-slate-800 {
+  color: #E2E8F0 !important;
+}
+
+.dark .text-slate-700 {
+  color: #CBD5E1 !important;
+}
+
+.dark .text-slate-600 {
+  color: #94A3B8 !important;
+}
+
+.dark .text-slate-500 {
+  color: #64748B !important;
+}
+
+.dark .text-slate-400 {
+  color: #64748B !important;
+}
+
+/* Background surfaces */
+.dark .bg-slate-50 {
+  background-color: #1E293B !important;
+}
+
+.dark .bg-slate-100 {
+  background-color: #1E293B !important;
+}
+
+/* Event card backgrounds in dark mode */
+.dark .bg-red-50\/20    { background-color: rgba(239, 68, 68, 0.08) !important; }
+.dark .bg-fuchsia-50\/20 { background-color: rgba(192, 38, 211, 0.08) !important; }
+.dark .bg-cyan-50\/20   { background-color: rgba(6, 182, 212, 0.08) !important; }
+.dark .bg-amber-50\/20  { background-color: rgba(245, 158, 11, 0.08) !important; }
+.dark .bg-emerald-50\/40 { background-color: rgba(16, 185, 129, 0.08) !important; }
+.dark .bg-indigo-50\/40  { background-color: rgba(79, 70, 229, 0.08) !important; }
+.dark .bg-slate-50\/60   { background-color: rgba(30, 41, 59, 0.6) !important; }
+.dark .bg-slate-50\/40   { background-color: rgba(30, 41, 59, 0.4) !important; }
+
+/* Indigo AI triage panel */
+.dark .bg-indigo-50\/50 {
+  background-color: rgba(79, 70, 229, 0.08) !important;
+}
+
+/* Info panels */
+.dark .bg-blue-50   { background-color: rgba(59, 130, 246, 0.1) !important; }
+.dark .bg-cyan-50   { background-color: rgba(6, 182, 212, 0.1) !important; }
+.dark .bg-teal-50   { background-color: rgba(20, 184, 166, 0.1) !important; }
+.dark .bg-fuchsia-50 { background-color: rgba(192, 38, 211, 0.1) !important; }
+
+/* Input selects in dark mode */
+.dark select,
+.dark input[type="text"],
+.dark input[type="password"] {
+  background-color: #1E293B !important;
+  border-color: #334155 !important;
+  color: #E2E8F0 !important;
+}
+
+/* Modal overlay dark */
+.dark .bg-slate-900\/50 {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Gradient header in dark mode */
+.dark .bg-gradient-to-r.from-indigo-600 {
+  background: linear-gradient(to right, #312E81, #3730A3, #1E3A5F) !important;
+}
+
+/* Gradient header backgrounds in dark mode */
+.dark .from-indigo-50.to-white,
+.dark .from-indigo-50.to-slate-50 {
+  background: linear-gradient(to right, rgba(79, 70, 229, 0.1), #111827) !important;
+}
+
+.dark .from-teal-50.to-white {
+  background: linear-gradient(to right, rgba(20, 184, 166, 0.1), #111827) !important;
+}
+
+/* Tooltip/code backgrounds */
+.dark code {
+  background-color: #1E293B !important;
+  border-color: #334155 !important;
+}
+
+/* Landing page sections (below hero) in dark mode */
+.dark section.py-16,
+.dark section.py-24 {
+  background-color: #0B1120;
+}
+
+.dark section .bg-white\/40 {
+  background-color: rgba(17, 24, 39, 0.4) !important;
+}
+
+/* Feature cards */
+.dark .group.rounded-2xl.border.bg-white {
+  background-color: #111827 !important;
+  border-color: #1E293B !important;
+}
+
+/* Landing page text in dark mode */
+.dark .text-foreground {
+  color: #E2E8F0 !important;
+}
+
+.dark .text-muted-foreground {
+  color: #94A3B8 !important;
+}
+
+/* Landing page sections with borders */
+.dark .border-border\/50 {
+  border-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+/* Footer */
+.dark footer {
+  background-color: rgba(17, 24, 39, 0.3) !important;
+}
+
+/* Landing page bottom gradient from hero */
+.dark .from-transparent.to-\[\#F4F7FE\] {
+  background: linear-gradient(to bottom, transparent, #0B1120) !important;
+}
+
+/* Pipeline step cards in dark mode */
+.dark .border-cyan-200.bg-cyan-50\/50 {
+  background-color: rgba(6, 182, 212, 0.06) !important;
+  border-color: rgba(6, 182, 212, 0.2) !important;
+}
+.dark .border-indigo-200.bg-indigo-50\/50 {
+  background-color: rgba(79, 70, 229, 0.06) !important;
+  border-color: rgba(79, 70, 229, 0.2) !important;
+}
+.dark .border-violet-200.bg-violet-50\/50 {
+  background-color: rgba(124, 58, 237, 0.06) !important;
+  border-color: rgba(124, 58, 237, 0.2) !important;
+}
+.dark .border-emerald-200.bg-emerald-50\/50 {
+  background-color: rgba(16, 185, 129, 0.06) !important;
+  border-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+/* R&D section dark */
+.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.08) !important; }
+.dark .bg-indigo-50  { background-color: rgba(79, 70, 229, 0.08) !important; }
+.dark .bg-fuchsia-50 { background-color: rgba(192, 38, 211, 0.08) !important; }
+
+/* Severity badges keep their visibility in dark mode */
+.dark .bg-red-50     { background-color: rgba(239, 68, 68, 0.12) !important; }
+.dark .bg-orange-50  { background-color: rgba(249, 115, 22, 0.12) !important; }
+.dark .bg-amber-50   { background-color: rgba(245, 158, 11, 0.12) !important; }
+
+/* Scrolled navbar on landing page */
+.dark .bg-white\/70.backdrop-blur-xl {
+  background-color: rgba(17, 24, 39, 0.8) !important;
 }

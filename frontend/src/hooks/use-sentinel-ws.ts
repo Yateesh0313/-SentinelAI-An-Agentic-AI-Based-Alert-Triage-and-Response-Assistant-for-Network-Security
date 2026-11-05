@@ -277,7 +277,7 @@ export function useSentinelWS() {
   // ── Network interfaces fetch ─────────────────────────────────────────────
   const fetchInterfaces = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/interfaces`);
+      const res = await authedFetch(`${API_BASE}/interfaces`);
       if (res.ok) {
         const data = await res.json();
         setInterfaces(data.interfaces || []);
@@ -293,7 +293,7 @@ export function useSentinelWS() {
   // ── Suricata status check ─────────────────────────────────────────────────
   const checkSuricataStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/suricata/status`);
+      const res = await authedFetch(`${API_BASE}/suricata/status`);
       if (res.ok) {
         const data = await res.json();
         const isRunning = data.status === "running";
@@ -308,7 +308,7 @@ export function useSentinelWS() {
   // ── Live Traffic Capture interfaces ───────────────────────────────────────
   const fetchLiveInterfaces = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/live/interfaces`);
+      const res = await authedFetch(`${API_BASE}/live/interfaces`);
       if (res.ok) {
         const data = await res.json();
         const ifaces: LiveInterface[] = data.interfaces || [];
@@ -331,7 +331,7 @@ export function useSentinelWS() {
   // ── Live Traffic Capture status check ─────────────────────────────────────
   const checkLiveCaptureStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/live/status`);
+      const res = await authedFetch(`${API_BASE}/live/status`);
       if (res.ok) {
         const data: LiveCaptureStatus = await res.json();
         const isRunning = data.status === "running" || data.running === true;
